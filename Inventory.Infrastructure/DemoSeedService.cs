@@ -177,6 +177,22 @@ public static class DemoSeedService
             }
         }
 
+        var first = items[0];
+        var firstTemplate = Templates[0];
+        AddReceipt(
+            today,
+            today,
+            first,
+            first.ReferencePrice > 0 ? first.ReferencePrice : firstTemplate.Price,
+            Math.Max(8m, firstTemplate.MonthlyBase * 10),
+            suppliers[0],
+            lots,
+            lotsByItem,
+            remaining,
+            documents,
+            actor,
+            ref lotSeq);
+
         foreach (var lot in lots)
         {
             lot.Quantity = remaining[lot];
