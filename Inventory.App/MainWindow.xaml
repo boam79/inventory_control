@@ -8,14 +8,14 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Padding="12,8" Background="#F4F4F4" BorderBrush="#DDD" BorderThickness="0,0,0,1">
             <DockPanel>
-                <TextBlock x:Name="UserLabel" VerticalAlignment="Center"/>
-                <TextBlock x:Name="PeriodLabel" Margin="16,0,0,0" VerticalAlignment="Center"/>
-                <TextBlock x:Name="VersionLabel" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                <Button x:Name="LogoutButton" DockPanel.Dock="Right" Content="로그아웃" Margin="0,0,12,0"
+                <Button x:Name="LogoutButton" DockPanel.Dock="Right" Content="로그아웃" Margin="8,0,0,0"
                         Padding="10,2" Click="Logout_Click"/>
+                <TextBlock x:Name="VersionLabel" DockPanel.Dock="Right" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                <TextBlock x:Name="UserLabel" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                <TextBlock x:Name="PeriodLabel" Margin="16,0,8,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </DockPanel>
         </Border>
-        <ListBox x:Name="MenuList" DockPanel.Dock="Left" Width="200" SelectionChanged="MenuList_SelectionChanged">
+        <ListBox x:Name="MenuList" DockPanel.Dock="Left" Width="180" MinWidth="160" SelectionChanged="MenuList_SelectionChanged">
             <ListBoxItem Content="대시보드" Tag="dashboard"/>
             <ListBoxItem Content="입고 등록" Tag="receive"/>
             <ListBoxItem Content="사용 등록" Tag="issue"/>
@@ -30,6 +30,9 @@
             <ListBoxItem Content="백업·복원" Tag="backup"/>
             <ListBoxItem Content="환경설정" Tag="settings"/>
         </ListBox>
-        <ContentControl x:Name="MainContent" Margin="16"/>
+        <!-- MinWidth/MinHeight는 Inventory.Core.UiLayout과 같아야 함 (1366×768 설계, 스크롤로 잘림 완화). -->
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <ContentControl x:Name="MainContent" Margin="16" MinWidth="900"/>
+        </ScrollViewer>
     </DockPanel>
 </Window>

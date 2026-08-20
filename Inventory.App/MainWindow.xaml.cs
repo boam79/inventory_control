@@ -1,5 +1,6 @@
 ﻿using Inventory.Core;
 using Inventory.Infrastructure;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -10,6 +11,11 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        MinWidth = UiLayout.MinWidth;
+        MinHeight = UiLayout.MinHeight;
+        Width = UiLayout.DesignWidth;
+        Height = UiLayout.DesignHeight;
+        MenuList.Width = UiLayout.MenuWidth;
         var session = AppSession.Current;
         UserLabel.Text = session is null
             ? "사용자 없음"
@@ -41,6 +47,28 @@ public partial class MainWindow : Window
 
         var update = await UpdateChecker.CheckAsync();
         PeriodLabel.Text = $"기준: {DateTime.Today:yyyy년 M월}  · {update.Message}";
+        try
+        {
+            var stage = global::System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "SpringClinicInventory",
+                "updates");
+            var marker = global::System.IO.Path.Combine(stage, "current.marker");
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            var staged = await UpdateChecker.TryStageLatestIfPresentAsync(
+                client,
+                AppHost.DatabasePath,
+                stage,
+                marker);
+            if (staged is { Applied: true })
+            {
+                PeriodLabel.Text += "  · 검증된 업데이트가 대기 폴더에 있습니다.";
+            }
+        }
+        catch
+        {
+            // 업데이트 실패는 재고 화면을 막지 않는다.
+        }
     }
 
     private void Logout_Click(object sender, RoutedEventArgs e)

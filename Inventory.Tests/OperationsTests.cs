@@ -40,6 +40,118 @@ public sealed class OperationsTests : IDisposable
     }
 
     [Fact]
+    public void Excel_full_history_skips_empty_formula_rows_and_commits_real_transactions()
+    {
+        var sample = CreateSampleWorkbook(withHistory: true);
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var result = ExcelCatalog.Import(db, sample, ImportMode.FullHistory);
+        Assert.False(result.DoubleCountWarning);
+        Assert.Equal(2, result.TransactionRows);
+        var svc = new InventoryService(db, "t");
+        Assert.Equal(7m, svc.GetOnHand("M001"));
+        Assert.Equal(1, db.Documents.Count(d => d.Type == DocumentType.Issue));
+    }
+
+    [Fact]
+    public void Excel_full_history_with_opening_and_ledger_warns_double_count()
+    {
+        var sample = CreateSampleWorkbook(openingForM001: 10, withHistory: true);
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var result = ExcelCatalog.Import(db, sample, ImportMode.FullHistory);
+        Assert.True(result.DoubleCountWarning);
+        var svc = new InventoryService(db, "t");
+        Assert.Equal(7m, svc.GetOnHand("M001"));
+        Assert.DoesNotContain(svc.LotsForItem("M001"), l => l.LotNumber == "OPEN");
+    }
+
+    [Fact]
+    public void Excel_full_history_of_empty_template_imports_no_transactions()
+    {
+        var sample = CreateSampleWorkbook(withHistory: false);
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var result = ExcelCatalog.Import(db, sample, ImportMode.FullHistory);
+        Assert.Equal(0, result.TransactionRows);
+        Assert.False(result.DoubleCountWarning);
+        Assert.Equal(0, db.Documents.Count());
+    }
+
+    [Fact]
+    public void Onnx_cpu_identity_hello_or_forecast_falls_back()
+    {
+        using var engine = OnnxCpuEngine.TryCreate();
+        if (engine is null)
+        {
+            var fallback = UsageForecast.Predict(new decimal[] { 4, 5, 6 }, new DisabledOnnxForecastEngine());
+            Assert.True(fallback.Available);
+            return;
+        }
+
+        Assert.True(engine.TryHello(out var hello));
+        Assert.InRange(hello, 0.99f, 1.01f);
+        var predicted = UsageForecast.Predict(new decimal[] { 9, 8, 7 }, engine);
+        Assert.Equal("ONNX", predicted.ModelName);
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 3, DateTime.Today.AddDays(-1), DateTime.Today.AddDays(20));
+        svc.ConfirmOpening("M001");
+        _ = UsageForecast.Predict(new decimal[] { 1, 2, 3 }, engine);
+        Assert.Equal(3m, svc.GetOnHand("M001"));
+    }
+
+    [Fact]
+    public async Task Update_hash_mismatch_keeps_current_after_backup()
+    {
+        var marker = Path.Combine(_work, "app.marker");
+        File.WriteAllText(marker, "RUNNING");
+        var package = "package-bytes"u8.ToArray();
+        using var handler = new BytesHandler(package);
+        using var client = new HttpClient(handler);
+        var result = await UpdateChecker.DownloadVerifyAndStageAsync(
+            client,
+            new Uri("https://example.invalid/app.zip"),
+            expectedSha256Hex: "DEADBEEF",
+            dbPath: _dbPath,
+            stagingFolder: Path.Combine(_work, "stage-bad"),
+            currentMarkerPath: marker);
+        Assert.True(result.KeptCurrent);
+        Assert.False(result.Applied);
+        Assert.True(result.BackupTaken);
+        Assert.Equal("RUNNING", File.ReadAllText(marker));
+        Assert.False(File.Exists(Path.Combine(_work, "stage-bad", "update.bin")));
+    }
+
+    [Fact]
+    public async Task Update_hash_match_stages_package_without_replacing_current()
+    {
+        var marker = Path.Combine(_work, "app-ok.marker");
+        File.WriteAllText(marker, "RUNNING");
+        var package = "good-package"u8.ToArray();
+        using var handler = new BytesHandler(package);
+        using var client = new HttpClient(handler);
+        var result = await UpdateChecker.DownloadVerifyAndStageAsync(
+            client,
+            new Uri("https://example.invalid/app.zip"),
+            expectedSha256Hex: UpdateChecker.Sha256Hex(package),
+            dbPath: _dbPath,
+            stagingFolder: Path.Combine(_work, "stage-ok"),
+            currentMarkerPath: marker);
+        Assert.True(result.Applied);
+        Assert.True(result.KeptCurrent);
+        Assert.Equal("RUNNING", File.ReadAllText(marker));
+        Assert.True(File.Exists(result.StagedPath));
+    }
+
+    [Fact]
+    public void Ui_layout_targets_1366_by_768()
+    {
+        Assert.Equal(1366, Inventory.Core.UiLayout.DesignWidth);
+        Assert.Equal(768, Inventory.Core.UiLayout.DesignHeight);
+        Assert.True(Inventory.Core.UiLayout.MinWidth <= Inventory.Core.UiLayout.DesignWidth);
+        Assert.True(Inventory.Core.UiLayout.MinWidth >= 1024);
+    }
+
+    [Fact]
     public void Desktop_sample_workbook_imports_five_masters_and_no_transactions()
     {
         const string sample = @"c:\Users\tttt\Desktop\스프링의원_월별_구매사용_재고관리_프로그램.xlsx";
@@ -129,11 +241,11 @@ public sealed class OperationsTests : IDisposable
         var shortResult = UsageForecast.Predict(new decimal[] { 1, 2 });
         Assert.False(shortResult.Available);
         Assert.Contains("데이터 부족", shortResult.Warning);
-        var ok = UsageForecast.Predict(new decimal[] { 10, 12, 11 });
+        var ok = UsageForecast.Predict(new decimal[] { 10, 12, 11 }, new DisabledOnnxForecastEngine());
         Assert.True(ok.Available);
         Assert.Equal("SMA3", ok.ModelName);
         Assert.Equal(3, ok.Future.Count);
-        var ssa = UsageForecast.Predict(new decimal[] { 10, 12, 11, 13, 12, 14, 15, 13 });
+        var ssa = UsageForecast.Predict(new decimal[] { 10, 12, 11, 13, 12, 14, 15, 13 }, new DisabledOnnxForecastEngine());
         Assert.True(ssa.Available);
         Assert.Equal(3, ssa.Future.Count);
         Assert.Contains(ssa.ModelName, new[] { "ML.NET-SSA", "SMA3" });
@@ -203,7 +315,7 @@ public sealed class OperationsTests : IDisposable
         Assert.DoesNotContain(bars, b => b.Month != DateTime.Today.Month && b.Qty > 0 && false);
     }
 
-    private string CreateSampleWorkbook(decimal? openingForM001 = null)
+    private string CreateSampleWorkbook(decimal? openingForM001 = null, bool withHistory = false)
     {
         var path = Path.Combine(_work, $"sample-{Guid.NewGuid():N}.xlsx");
         using var wb = new XLWorkbook();
@@ -245,6 +357,28 @@ public sealed class OperationsTests : IDisposable
             stock.Cell(2, 5).Value = qty;
         }
 
+        var buy = wb.AddWorksheet("구매내역");
+        buy.Cell(1, 1).Value = "구매일";
+        buy.Cell(1, 2).Value = "품목코드";
+        buy.Cell(1, 3).Value = "공급업체";
+        buy.Cell(1, 4).Value = "구매수량";
+        buy.Cell(3, 4).Value = "=C3";
+        var use = wb.AddWorksheet("사용내역");
+        use.Cell(1, 1).Value = "사용일";
+        use.Cell(1, 2).Value = "품목코드";
+        use.Cell(1, 3).Value = "사용수량";
+        use.Cell(3, 3).Value = "=A3";
+        if (withHistory)
+        {
+            buy.Cell(2, 1).Value = DateTime.Today.AddDays(-5);
+            buy.Cell(2, 2).Value = "M001";
+            buy.Cell(2, 3).Value = "A사";
+            buy.Cell(2, 4).Value = 10;
+            use.Cell(2, 1).Value = DateTime.Today.AddDays(-1);
+            use.Cell(2, 2).Value = "M001";
+            use.Cell(2, 3).Value = 3;
+        }
+
         wb.SaveAs(path);
         return path;
     }
@@ -270,5 +404,18 @@ public sealed class OperationsTests : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             throw new HttpRequestException("offline");
+    }
+
+    private sealed class BytesHandler : HttpMessageHandler
+    {
+        private readonly byte[] _bytes;
+
+        public BytesHandler(byte[] bytes) => _bytes = bytes;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(_bytes)
+            });
     }
 }

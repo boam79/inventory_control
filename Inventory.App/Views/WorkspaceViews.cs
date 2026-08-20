@@ -15,7 +15,7 @@ namespace Inventory.App.Views;
 
 public abstract class WorkspaceView : UserControl
 {
-    protected static TextBox Box(string text = "") => new() { Text = text, MinWidth = 120, Margin = new Thickness(4) };
+    protected static TextBox Box(string text = "") => new() { Text = text, MinWidth = 88, MaxWidth = 220, Margin = new Thickness(4) };
     protected static DatePicker Date(DateTime? value = null) => new() { SelectedDate = value ?? DateTime.Today, Margin = new Thickness(4) };
     protected static Button Btn(string text, RoutedEventHandler click)
     {
@@ -597,7 +597,7 @@ public sealed class BackupView : WorkspaceView
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel();
         panel.Children.Add(Title("백업·복원"));
-        panel.Children.Add(Note("복원 전에 현재 DB를 .pre-restore 로 복사합니다. Excel 가져오기는 마스터만 / 마스터+기초입니다. 빈 수식 행은 거래가 아닙니다."));
+        panel.Children.Add(Note("복원 전에 현재 DB를 .pre-restore 로 복사합니다. Excel 가져오기는 마스터만 / 마스터+기초 / 전체이력입니다. 빈 수식 행은 거래가 아닙니다. 기초와 이력을 같이 넣으면 이중계산 경고 후 기초는 건너뜁니다."));
         panel.Children.Add(Btn("지금 백업", (_, _) =>
         {
             var dlg = new SaveFileDialog { Filter = "SQLite (*.db)|*.db", FileName = $"inventory-{DateTime.Today:yyyyMMdd}.db" };
@@ -626,13 +626,14 @@ public sealed class BackupView : WorkspaceView
                 status.Text = "내보냈습니다.";
             }
         }));
-        panel.Children.Add(Btn("Excel 가져오기(마스터만)", (_, _) => Import(false, status)));
-        panel.Children.Add(Btn("Excel 가져오기(마스터+기초)", (_, _) => Import(true, status)));
+        panel.Children.Add(Btn("Excel 가져오기(마스터만)", (_, _) => Import(ImportMode.MasterOnly, status)));
+        panel.Children.Add(Btn("Excel 가져오기(마스터+기초)", (_, _) => Import(ImportMode.MasterAndOpening, status)));
+        panel.Children.Add(Btn("Excel 가져오기(전체이력)", (_, _) => Import(ImportMode.FullHistory, status)));
         panel.Children.Add(status);
-        Content = panel;
+        Content = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }
 
-    private static void Import(bool opening, TextBlock status)
+    private static void Import(ImportMode mode, TextBlock status)
     {
         var dlg = new OpenFileDialog { Filter = "Excel (*.xlsx)|*.xlsx" };
         if (dlg.ShowDialog() != true)
@@ -647,8 +648,12 @@ public sealed class BackupView : WorkspaceView
         }
 
         using var db = AppHost.OpenDb();
-        var result = ExcelCatalog.ImportMaster(db, dlg.FileName, opening);
+        var result = ExcelCatalog.Import(db, dlg.FileName, mode);
         status.Text = $"가져옴: 품목 {result.ImportedItems}, 거래 {result.TransactionRows}, 기초확정 {result.OpeningConfirmed}";
+        if (result.DoubleCountWarning)
+        {
+            status.Text += "\n" + result.Warning;
+        }
     }
 }
 

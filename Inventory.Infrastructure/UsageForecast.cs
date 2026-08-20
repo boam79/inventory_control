@@ -26,6 +26,8 @@ public sealed class DisabledOnnxForecastEngine : IOnnxForecastEngine
 
 public static class UsageForecast
 {
+    private static readonly Lazy<IOnnxForecastEngine> DefaultOnnx = new(() =>
+        OnnxCpuEngine.TryCreate() ?? (IOnnxForecastEngine)new DisabledOnnxForecastEngine());
     private sealed class SeriesPoint
     {
         public float Value { get; set; }
@@ -40,7 +42,7 @@ public static class UsageForecast
         IReadOnlyList<decimal> history,
         IOnnxForecastEngine? onnx = null)
     {
-        onnx ??= new DisabledOnnxForecastEngine();
+        onnx ??= DefaultOnnx.Value;
         if (history.Count < 3)
         {
             return new ForecastResult(

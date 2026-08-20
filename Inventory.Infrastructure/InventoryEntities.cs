@@ -139,6 +139,15 @@ public sealed class ImportResult
     public int SkippedRows { get; set; }
     public int TransactionRows { get; set; }
     public int OpeningConfirmed { get; set; }
+    public bool DoubleCountWarning { get; set; }
+    public string Warning { get; set; } = string.Empty;
+}
+
+public enum ImportMode
+{
+    MasterOnly = 0,
+    MasterAndOpening = 1,
+    FullHistory = 2
 }
 
 public enum StockStatusKind
