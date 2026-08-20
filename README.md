@@ -35,10 +35,10 @@ DB는 설치 폴더가 아니라 `%LOCALAPPDATA%\SpringClinicInventory\inventory
 `gh`로 릴리스에 올리려면 (로그인 후):
 
 ```text
-gh release create v1.0.1 dist/*Setup.exe dist/*.sha256 --repo boam79/inventory_control --title "v1.0.1" --notes "UI 개선, 빈 DB 시 테스트 데이터, 설치본"
+gh release create v1.0.2 dist/*Setup.exe dist/*.sha256 --repo boam79/inventory_control --title "v1.0.2" --notes "품목 1만, 계절 시드, 년월일 통계"
 ```
 
-다운로드: https://github.com/boam79/inventory_control/releases/download/v1.0.1/SpringClinic.Inventory-win-Setup.exe
+다운로드: https://github.com/boam79/inventory_control/releases/download/v1.0.2/SpringClinic.Inventory-win-Setup.exe
 
 큰 exe는 git에 넣지 않습니다. 빌드 스크립트만 커밋합니다.
 
@@ -81,11 +81,11 @@ dotnet publish Inventory.App -c Release -r win-x64 --self-contained true -o publ
 
 ## 테스트 데이터 (대시보드·예측 확인용)
 
-**거래가 0건이면 관리자 로그인 후 자동으로** 약 2만 건(1년치)을 넣습니다. 실제 입고·사용이 한 건이라도 있으면 자동 시드하지 않습니다.
+**거래가 0건이면 관리자 로그인 후 자동으로** 품목 약 1만 개와 1년치 계절 거래를 넣습니다. 실제 입고·사용이 한 건이라도 있으면 자동 시드하지 않습니다.
 
 대시보드 상단의 큰 버튼 **테스트 데이터 생성** 또는 환경설정(관리자)에서도 같은 작업을 할 수 있습니다.
 
-운영 의원 DB를 조용히 덮어쓰지 않습니다. 거래가 이미 많으면 거부하거나 한 번 더 확인합니다.
+운영 의원 DB를 조용히 덮어쓰지 않습니다. 거래가 이미 많으면 거부하거나 한 번 더 확인합니다. 품목 1만이 이미 있으면 중복 생성하지 않습니다.
 
 개발 PC:
 
@@ -95,7 +95,9 @@ dotnet run --project Inventory.App -- --seed-demo
 
 이미 거래가 있으면 추가하지 않습니다. 그래도 붙이려면 `--force` 를 붙입니다(기존 행은 삭제하지 않음).
 
-규모: 약 20,000건(±10%), 오늘 기준 직전 12~13개월. 품목 8개(기존 5개+장갑·거즈·알코올솜), 부서·공급업체 포함. 재고는 0 미만이 되지 않습니다.
+규모: 품목 약 10,000개, 직전 12~13개월, 봄·여름·가을·겨울 사용량 배율이 다릅니다. LOT는 일부 품목만. 재고는 0 미만이 되지 않습니다.
+
+1.0.1에서 이미 거래를 넣은 DB는 자동 시드가 돌지 않습니다. 테스트로 1만 품목을 보려면 `%LOCALAPPDATA%\SpringClinicInventory\inventory.db` 를 백업 후 삭제하고 다시 로그인하세요.
 
 Excel 가져오기는 **백업·복원** 화면의 `마스터만`(샘플 기본), `마스터+기초`, `전체이력`입니다. 빈 수식 행은 거래가 아닙니다. 기초와 이력을 같이 넣으면 이중계산 경고 후 기초는 건너뜁니다.
 

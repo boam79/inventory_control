@@ -434,18 +434,49 @@ public sealed class InventoryService
         return _db.Items.Where(i => i.Code.Contains(query) || i.Name.Contains(query)).ToList();
     }
 
-    public IReadOnlyList<StockSnapshot> SearchStockSnapshots(string query, int expiryWarningDays = 90)
+    public IReadOnlyList<StockSnapshot> SearchStockSnapshots(string query, int expiryWarningDays = 90, int? take = null)
     {
         var today = DateTime.Today;
         var warnUntil = today.AddDays(expiryWarningDays);
-        return SearchStock(query)
-            .Select(item =>
-            {
-                var onHand = GetOnHand(item.Code);
-                var status = Classify(item, onHand, warnUntil);
-                return new StockSnapshot(item.Code, item.Name, onHand, status);
-            })
-            .ToList();
+        query ??= string.Empty;
+        var itemQuery = _db.Items.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            itemQuery = itemQuery.Where(i =>
+                i.Code.Contains(query) || i.Name.Contains(query) || i.Category.Contains(query));
+        }
+
+        itemQuery = itemQuery.OrderBy(i => i.Code);
+        if (take is not null)
+        {
+            itemQuery = itemQuery.Take(take.Value);
+        }
+
+        var items = itemQuery.ToList();
+        var ids = items.Select(i => i.Id).ToList();
+        var qty = _db.Lots
+            .Where(l => ids.Contains(l.ItemId))
+            .GroupBy(l => l.ItemId)
+            .Select(g => new { g.Key, Qty = g.Sum(x => x.Quantity) })
+            .ToList()
+            .ToDictionary(x => x.Key, x => x.Qty);
+        var expiring = _db.Lots
+            .Where(l => ids.Contains(l.ItemId)
+                        && l.Quantity > 0
+                        && l.ExpiryDate != null
+                        && l.ExpiryDate.Value.Date <= warnUntil)
+            .Select(l => l.ItemId)
+            .Distinct()
+            .ToHashSet();
+
+        return items.Select(item =>
+        {
+            decimal? onHand = item.OpeningStatus == OpeningStatus.Unset
+                ? null
+                : qty.GetValueOrDefault(item.Id);
+            var status = Classify(item, onHand, expiring.Contains(item.Id));
+            return new StockSnapshot(item.Code, item.Name, onHand, status);
+        }).ToList();
     }
 
     public IReadOnlyList<Item> ReorderItems() =>
@@ -454,10 +485,13 @@ public sealed class InventoryService
             .Select(row => RequireItem(row.Code))
             .ToList();
 
-    public IReadOnlyList<StockDocument> ListDocuments() =>
-        _db.Documents.Include(d => d.Lines).OrderByDescending(d => d.Id).ToList();
+    public IReadOnlyList<StockDocument> ListDocuments(int? take = null)
+    {
+        var query = _db.Documents.Include(d => d.Lines).OrderByDescending(d => d.Id);
+        return (take is null ? query : query.Take(take.Value)).ToList();
+    }
 
-    private StockStatusKind Classify(Item item, decimal? onHand, DateTime warnUntil)
+    private static StockStatusKind Classify(Item item, decimal? onHand, bool expiring)
     {
         if (!item.IsActive)
         {
@@ -479,11 +513,6 @@ public sealed class InventoryService
             return StockStatusKind.Reorder;
         }
 
-        var expiring = _db.Lots.Any(l =>
-            l.ItemId == item.Id
-            && l.Quantity > 0
-            && l.ExpiryDate != null
-            && l.ExpiryDate.Value.Date <= warnUntil);
         return expiring ? StockStatusKind.Expiring : StockStatusKind.Normal;
     }
 

@@ -10,19 +10,23 @@ public sealed record DemoSeedResult(
 
 public static class DemoSeedService
 {
-    public const int DefaultTargetDocuments = 20_000;
+    public const int DefaultItemCount = 10_000;
+    public const int DefaultTargetDocuments = 50_000;
     public const int BusyThreshold = 50;
+    public const int LotTrackedLimit = 300;
 
-    private static readonly (string Code, string Name, string Category, string Spec, decimal Min, decimal Price, decimal DailyBase)[] Catalog =
+    private static readonly (string Prefix, string Category, string Spec, decimal Price, decimal MonthlyBase, bool PreferLot)[] Templates =
     [
-        ("M001", "주사기", "소모품", "1ml", 200m, 80m, 28m),
-        ("M002", "수액세트", "소모품", "세트", 80m, 1_200m, 8m),
-        ("M003", "PICC 관련 소모품", "시술재료", "세트", 15m, 35_000m, 2m),
-        ("M004", "Chemoport 관련 소모품", "시술재료", "세트", 12m, 28_000m, 1m),
-        ("M005", "초음파 젤", "소모품", "250ml", 20m, 4_500m, 3m),
-        ("M006", "멸균장갑", "소모품", "M", 150m, 350m, 18m),
-        ("M007", "거즈", "소모품", "4x4", 300m, 80m, 36m),
-        ("M008", "알코올솜", "소모품", "통", 80m, 60m, 12m)
+        ("주사기 1ml", "주사", "1ml", 80m, 4m, true),
+        ("수액세트", "수액", "세트", 1_200m, 3m, false),
+        ("PICC 소모품", "시술재료", "세트", 35_000m, 1m, true),
+        ("Chemoport 소모품", "시술재료", "세트", 28_000m, 1m, true),
+        ("초음파 젤", "시술재료", "250ml", 4_500m, 2m, false),
+        ("멸균장갑", "소독", "M", 350m, 5m, false),
+        ("거즈", "드레싱", "4x4", 80m, 6m, false),
+        ("알코올솜", "소독", "통", 60m, 4m, false),
+        ("생리식염수", "수액", "1L", 900m, 3m, false),
+        ("반창고", "드레싱", "롤", 150m, 3m, false)
     ];
 
     private static readonly string[] DepartmentNames = ["외래", "시술실", "검사실", "간호"];
@@ -37,11 +41,31 @@ public static class DemoSeedService
     public static bool ShouldAutoSeed(InventoryDbContext db) =>
         CountBusinessDocuments(db) == 0;
 
+    public static decimal SeasonalFactor(string category, int month)
+    {
+        var season = month switch
+        {
+            12 or 1 or 2 => 0,
+            3 or 4 or 5 => 1,
+            6 or 7 or 8 => 2,
+            _ => 3
+        };
+        return category switch
+        {
+            "주사" => new[] { 1.35m, 1.05m, 0.85m, 1.00m }[season],
+            "수액" => new[] { 0.80m, 1.00m, 1.40m, 0.95m }[season],
+            "시술재료" => new[] { 0.75m, 1.10m, 1.45m, 0.90m }[season],
+            "소독" => new[] { 1.50m, 1.00m, 0.70m, 1.15m }[season],
+            "드레싱" => new[] { 1.25m, 0.95m, 0.80m, 1.20m }[season],
+            _ => 1m
+        };
+    }
+
     public static DemoSeedResult TryAutoSeed(
         InventoryDbContext db,
         DateTime today,
         string actor = "demo-seed",
-        int? targetDocuments = null)
+        int? itemCount = null)
     {
         if (!ShouldAutoSeed(db))
         {
@@ -53,7 +77,7 @@ public static class DemoSeedService
                 $"거래 {existing}건이 있어 자동 시드하지 않았습니다. 기존 입고·사용은 그대로입니다.");
         }
 
-        return Generate(db, today, force: false, targetDocuments: targetDocuments, actor: actor);
+        return Generate(db, today, force: false, actor: actor, itemCount: itemCount);
     }
 
     public static DemoSeedResult Generate(
@@ -61,9 +85,11 @@ public static class DemoSeedService
         DateTime today,
         bool force = false,
         int? targetDocuments = null,
-        string actor = "demo-seed")
+        string actor = "demo-seed",
+        int? itemCount = null)
     {
-        var target = targetDocuments ?? DefaultTargetDocuments;
+        _ = targetDocuments;
+        var wantedItems = itemCount ?? DefaultItemCount;
         var existing = CountBusinessDocuments(db);
         if (existing >= BusyThreshold && !force)
         {
@@ -74,73 +100,81 @@ public static class DemoSeedService
                 $"이미 거래 {existing}건이 있어 테스트 데이터를 만들지 않았습니다. 운영 DB를 덮어쓰지 않습니다. 그래도 추가하려면 확인 후 강제 생성을 선택하세요.");
         }
 
+        if (db.Items.Count() >= DefaultItemCount && !force && wantedItems >= DefaultItemCount)
+        {
+            if (existing > 0)
+            {
+                return new DemoSeedResult(
+                    false,
+                    existing,
+                    db.Items.Count(),
+                    $"품목이 이미 {db.Items.Count()}개입니다. 중복 생성하지 않았습니다.");
+            }
+        }
+
         var start = new DateTime(today.Year, today.Month, 1).AddMonths(-12);
-        EnsureMasters(db, start, today);
+        EnsureMasters(db, start, today, wantedItems);
         db.ChangeTracker.AutoDetectChangesEnabled = false;
         db.Database.ExecuteSqlRaw("PRAGMA synchronous = OFF");
+        using var tx = db.Database.BeginTransaction();
 
-        var items = db.Items.ToList();
+        var items = db.Items.OrderBy(i => i.Code).ToList();
         var departments = db.Departments.ToList();
         var suppliers = db.Suppliers.ToList();
         var lots = db.Lots.ToList();
         var remaining = lots.ToDictionary(l => l, l => l.Quantity);
-        var lotSeq = 0;
-        var documents = new List<StockDocument>(target + 8);
+        var lotsByItem = lots.GroupBy(l => l.ItemId).ToDictionary(g => g.Key, g => g.ToList());
+        var documents = new List<StockDocument>(items.Count * 16);
         var rng = new Random(20260820);
-        var days = Workdays(start, today);
-        var remainingTarget = target;
+        var lotSeq = 0;
+        var popular = Math.Min(400, items.Count);
 
-        for (var dayIndex = 0; dayIndex < days.Count; dayIndex++)
+        for (var offset = 0; offset < 13; offset++)
         {
-            var date = days[dayIndex];
-            var quota = dayIndex == days.Count - 1
-                ? remainingTarget
-                : Math.Max(1, remainingTarget / (days.Count - dayIndex));
-            var emitted = EmitDay(
-                date,
-                today,
-                quota,
-                items,
-                departments,
-                suppliers,
-                lots,
-                remaining,
-                documents,
-                rng,
-                actor,
-                ref lotSeq);
-            remainingTarget = Math.Max(0, remainingTarget - emitted);
-        }
+            var monthStart = start.AddMonths(offset);
+            var days = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
+            for (var i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                var template = Templates[i % Templates.Length];
+                var factor = SeasonalFactor(item.Category, monthStart.Month);
+                var qty = Math.Max(1m, Math.Round(template.MonthlyBase * factor, 0, MidpointRounding.AwayFromZero));
+                var issueDays = i < popular
+                    ? new[] { 5, 12, 20 }
+                    : new[] { Math.Min(12, days) };
+                var each = Math.Max(1m, Math.Round(qty / issueDays.Length, 0, MidpointRounding.AwayFromZero));
+                foreach (var day in issueDays)
+                {
+                    var date = new DateTime(monthStart.Year, monthStart.Month, Math.Min(day, days));
+                    if (date > today)
+                    {
+                        continue;
+                    }
 
-        FillToTarget(
-            today,
-            remainingTarget,
-            items,
-            departments,
-            suppliers,
-            lots,
-            remaining,
-            documents,
-            rng,
-            actor,
-            ref lotSeq);
-        IssueItemDownToZero(today, items, "M008", departments[0], lots, remaining, documents, actor, target >= DefaultTargetDocuments);
-        AddReceipt(
-            today,
-            today,
-            items[0],
-            Catalog.First(c => c.Code == items[0].Code).Price,
-            Catalog.First(c => c.Code == items[0].Code).DailyBase * 15,
-            suppliers[0],
-            lots,
-            remaining,
-            documents,
-            actor,
-            ref lotSeq);
-        var gauze = items.FirstOrDefault(i => i.Code == "M007");
-        if (gauze is not null)
-        {
-            gauze.MinStock = 10_000m;
+                    EnsureStock(
+                        date,
+                        today,
+                        item,
+                        template.Price,
+                        each * 8,
+                        suppliers[rng.Next(suppliers.Count)],
+                        lots,
+                        lotsByItem,
+                        remaining,
+                        documents,
+                        actor,
+                        ref lotSeq);
+                    AddIssue(
+                        date,
+                        item,
+                        each,
+                        departments[rng.Next(departments.Count)],
+                        lotsByItem,
+                        remaining,
+                        documents,
+                        actor);
+                }
+            }
         }
 
         foreach (var lot in lots)
@@ -148,11 +182,10 @@ public static class DemoSeedService
             lot.Quantity = remaining[lot];
         }
 
-        db.ChangeTracker.AutoDetectChangesEnabled = true;
         db.Lots.AddRange(lots.Where(l => l.Id == 0));
         db.SaveChanges();
 
-        foreach (var chunk in documents.Chunk(400))
+        foreach (var chunk in documents.Chunk(800))
         {
             foreach (var doc in chunk)
             {
@@ -160,7 +193,7 @@ public static class DemoSeedService
                 {
                     if (line.LotId is null or 0)
                     {
-                        var lot = lots.First(l => l.LotNumber == line.LotNumber && l.ItemId == line.ItemId);
+                        var lot = lotsByItem[line.ItemId].First(l => l.LotNumber == line.LotNumber);
                         line.LotId = lot.Id;
                     }
                 }
@@ -170,7 +203,8 @@ public static class DemoSeedService
             db.SaveChanges();
         }
 
-        db.SaveChanges();
+        db.ChangeTracker.AutoDetectChangesEnabled = true;
+        tx.Commit();
         new AuditService(db).Write(
             actor,
             "DemoSeed.Generate",
@@ -185,212 +219,39 @@ public static class DemoSeedService
             true,
             count,
             items.Count,
-            $"테스트 데이터 {count}건을 추가했습니다. 기존 거래는 삭제하지 않았습니다. 대시보드에서 KPI와 월별 그래프를 확인하세요.");
+            $"테스트 데이터 품목 {items.Count}개, 거래 {count}건을 추가했습니다. 기존 거래는 삭제하지 않았습니다.");
     }
 
-    private static void FillToTarget(
-        DateTime today,
-        int remainingTarget,
-        List<Item> items,
-        List<Department> departments,
-        List<Supplier> suppliers,
-        List<Lot> lots,
-        Dictionary<Lot, decimal> remaining,
-        List<StockDocument> documents,
-        Random rng,
-        string actor,
-        ref int lotSeq)
-    {
-        var guard = 0;
-        while (remainingTarget > 0 && guard++ < remainingTarget + 8)
-        {
-            var item = items[guard % items.Count];
-            var catalog = Catalog.First(c => c.Code == item.Code);
-            if (AddIssue(today, item, 1m, departments[guard % departments.Count], lots, remaining, documents, actor))
-            {
-                remainingTarget--;
-                continue;
-            }
+    public static decimal SeasonalWinterVsSummer(string category) =>
+        SeasonalFactor(category, 1) - SeasonalFactor(category, 7);
 
-            remainingTarget -= AddReceipt(
-                today,
-                today,
-                item,
-                catalog.Price,
-                catalog.DailyBase * 20,
-                suppliers[rng.Next(suppliers.Count)],
-                lots,
-                remaining,
-                documents,
-                actor,
-                ref lotSeq);
-        }
-    }
-
-    private static void IssueItemDownToZero(
-        DateTime today,
-        List<Item> items,
-        string code,
-        Department department,
-        List<Lot> lots,
-        Dictionary<Lot, decimal> remaining,
-        List<StockDocument> documents,
-        string actor,
-        bool enabled)
-    {
-        if (!enabled)
-        {
-            return;
-        }
-        var item = items.FirstOrDefault(i => i.Code == code);
-        if (item is null)
-        {
-            return;
-        }
-
-        foreach (var lot in lots.Where(l => l.ItemId == item.Id && remaining[l] > 0).ToList())
-        {
-            var qty = remaining[lot];
-            if (!AddIssue(today, item, qty, department, lots, remaining, documents, actor))
-            {
-                remaining[lot] = 0m;
-            }
-        }
-    }
-
-    private static int EmitDay(
+    private static void EnsureStock(
         DateTime date,
         DateTime today,
-        int quota,
-        List<Item> items,
-        List<Department> departments,
-        List<Supplier> suppliers,
+        Item item,
+        decimal price,
+        decimal need,
+        Supplier supplier,
         List<Lot> lots,
+        Dictionary<int, List<Lot>> lotsByItem,
         Dictionary<Lot, decimal> remaining,
         List<StockDocument> documents,
-        Random rng,
         string actor,
         ref int lotSeq)
     {
-        var emitted = 0;
-        var seasonal = Seasonal(date.Month) * (1m + 0.012m * MonthsFrom(new DateTime(today.Year, today.Month, 1).AddMonths(-12), date));
-        var weekWave = 1m + 0.12m * (decimal)Math.Sin(date.DayOfYear / 7.0);
-
-        foreach (var item in items)
+        var onHand = lotsByItem.TryGetValue(item.Id, out var list)
+            ? list.Sum(l => remaining[l])
+            : 0m;
+        if (onHand >= need)
         {
-            if (emitted >= quota)
-            {
-                break;
-            }
-
-            var catalog = Catalog.First(c => c.Code == item.Code);
-            var onHand = lots.Where(l => l.ItemId == item.Id).Sum(l => remaining[l]);
-            var want = Math.Max(1m, Math.Round(catalog.DailyBase * seasonal * weekWave, 0, MidpointRounding.AwayFromZero));
-            if (onHand < want * 10)
-            {
-                emitted += AddReceipt(
-                    date,
-                    today,
-                    item,
-                    catalog.Price,
-                    Math.Max(want * 25, catalog.DailyBase * 30),
-                    suppliers[rng.Next(suppliers.Count)],
-                    lots,
-                    remaining,
-                    documents,
-                    actor,
-                    ref lotSeq);
-            }
+            return;
         }
 
-        var itemIndex = 0;
-        while (emitted < quota)
-        {
-            var item = items[itemIndex % items.Count];
-            itemIndex++;
-            var catalog = Catalog.First(c => c.Code == item.Code);
-            var want = Math.Max(1m, Math.Round(catalog.DailyBase * seasonal * weekWave, 0, MidpointRounding.AwayFromZero));
-            var chunk = Math.Max(1m, Math.Min(want, 4m));
-            if (AddIssue(date, item, chunk, departments[rng.Next(departments.Count)], lots, remaining, documents, actor))
-            {
-                emitted++;
-            }
-            else if (emitted < quota)
-            {
-                emitted += AddReceipt(
-                    date,
-                    today,
-                    item,
-                    catalog.Price,
-                    catalog.DailyBase * 40,
-                    suppliers[rng.Next(suppliers.Count)],
-                    lots,
-                    remaining,
-                    documents,
-                    actor,
-                    ref lotSeq);
-                if (emitted < quota && AddIssue(date, item, chunk, departments[rng.Next(departments.Count)], lots, remaining, documents, actor))
-                {
-                    emitted++;
-                }
-                else if (emitted >= quota)
-                {
-                    break;
-                }
-                else
-                {
-                    break;
-                }
-            }
-            else
-            {
-                break;
-            }
-
-            if (itemIndex > items.Count * 80)
-            {
-                break;
-            }
-        }
-
-        if (emitted < quota && date.Day % 17 == 0)
-        {
-            var item = items[rng.Next(items.Count)];
-            var lot = lots.Where(l => l.ItemId == item.Id && remaining[l] > 1)
-                .OrderBy(l => l.ExpiryDate)
-                .FirstOrDefault();
-            if (lot is not null)
-            {
-                remaining[lot] -= 1m;
-                documents.Add(new StockDocument
-                {
-                    Type = DocumentType.Adjustment,
-                    DocumentDate = date,
-                    UserName = actor,
-                    Reason = "테스트 폐기",
-                    AdjustmentType = AdjustmentType.Disposal,
-                    Lines =
-                    {
-                        new StockLine
-                        {
-                            ItemId = item.Id,
-                            LotNumber = lot.LotNumber,
-                            ExpiryDate = lot.ExpiryDate,
-                            Quantity = 1m,
-                            UnitPrice = lot.UnitCost,
-                            Amount = lot.UnitCost,
-                            UnitCostSnapshot = lot.UnitCost
-                        }
-                    }
-                });
-                emitted++;
-            }
-        }
-
-        return emitted;
+        var add = need - onHand + (item.LotTracked ? need : need * 3);
+        AddReceipt(date, today, item, price, add, supplier, lots, lotsByItem, remaining, documents, actor, ref lotSeq);
     }
 
-    private static int AddReceipt(
+    private static void AddReceipt(
         DateTime date,
         DateTime today,
         Item item,
@@ -398,85 +259,65 @@ public static class DemoSeedService
         decimal quantity,
         Supplier supplier,
         List<Lot> lots,
+        Dictionary<int, List<Lot>> lotsByItem,
         Dictionary<Lot, decimal> remaining,
         List<StockDocument> documents,
         string actor,
         ref int lotSeq)
     {
         lotSeq++;
-        var lotNumber = $"R{date:yyyyMMdd}-{item.Code}-{lotSeq:00000}";
-        var expiry = date.AddMonths(10 + lotSeq % 8);
-        if (lotSeq % 11 == 0)
+        Lot lot;
+        if (!item.LotTracked && lotsByItem.TryGetValue(item.Id, out var existing) && existing.Count > 0)
         {
-            expiry = today.AddDays(12 + lotSeq % 40);
+            lot = existing[0];
+            remaining[lot] += quantity;
+        }
+        else
+        {
+            var lotNumber = item.LotTracked ? $"R{date:yyyyMM}-{item.Code}-{lotSeq:00000}" : "OPEN";
+            var found = lotsByItem.TryGetValue(item.Id, out var same)
+                ? same.FirstOrDefault(l => l.LotNumber == lotNumber)
+                : null;
+            if (found is not null)
+            {
+                lot = found;
+                remaining[lot] += quantity;
+            }
+            else
+            {
+                lot = new Lot
+                {
+                    ItemId = item.Id,
+                    LotNumber = lotNumber,
+                    ReceivedDate = date,
+                    ExpiryDate = item.ExpiryTracked ? date.AddMonths(10 + lotSeq % 6) : null,
+                    Quantity = quantity,
+                    UnitCost = price,
+                    SupplierId = supplier.Id
+                };
+                if (lotSeq % 17 == 0 && item.ExpiryTracked)
+                {
+                    lot.ExpiryDate = today.AddDays(20 + lotSeq % 40);
+                }
+
+                lots.Add(lot);
+                remaining[lot] = quantity;
+                if (!lotsByItem.TryGetValue(item.Id, out var bag))
+                {
+                    bag = [];
+                    lotsByItem[item.Id] = bag;
+                }
+
+                bag.Add(lot);
+            }
         }
 
-        var lot = new Lot
-        {
-            ItemId = item.Id,
-            LotNumber = lotNumber,
-            ReceivedDate = date,
-            ExpiryDate = expiry,
-            Quantity = quantity,
-            UnitCost = price,
-            SupplierId = supplier.Id
-        };
-        lots.Add(lot);
-        remaining[lot] = quantity;
         documents.Add(new StockDocument
         {
             Type = DocumentType.Receipt,
             DocumentDate = date,
             SupplierId = supplier.Id,
-            DocumentNo = lotNumber,
-            UserName = actor,
-            Lines =
-            {
-                new StockLine
-                {
-                    ItemId = item.Id,
-                    LotNumber = lotNumber,
-                    ExpiryDate = expiry,
-                    Quantity = quantity,
-                    UnitPrice = price,
-                    Amount = quantity * price,
-                    UnitCostSnapshot = price
-                }
-            }
-        });
-        return 1;
-    }
-
-    private static bool AddIssue(
-        DateTime date,
-        Item item,
-        decimal quantity,
-        Department department,
-        List<Lot> lots,
-        Dictionary<Lot, decimal> remaining,
-        List<StockDocument> documents,
-        string actor)
-    {
-        var lot = lots
-            .Where(l => l.ItemId == item.Id
-                        && remaining[l] >= quantity
-                        && l.ReceivedDate.Date <= date.Date
-                        && (l.ExpiryDate == null || l.ExpiryDate.Value.Date >= date.Date))
-            .OrderBy(l => l.ExpiryDate ?? DateTime.MaxValue)
-            .ThenBy(l => l.ReceivedDate)
-            .FirstOrDefault();
-        if (lot is null)
-        {
-            return false;
-        }
-
-        remaining[lot] -= quantity;
-        var cost = lot.UnitCost;
-        documents.Add(new StockDocument
-        {
-            Type = DocumentType.Issue,
-            DocumentDate = date,
-            DepartmentId = department.Id,
+            DocumentNo = $"{item.Code}-{date:yyyyMMdd}-{lotSeq}",
             UserName = actor,
             Lines =
             {
@@ -486,16 +327,68 @@ public static class DemoSeedService
                     LotNumber = lot.LotNumber,
                     ExpiryDate = lot.ExpiryDate,
                     Quantity = quantity,
-                    UnitPrice = cost,
-                    Amount = quantity * cost,
-                    UnitCostSnapshot = cost
+                    UnitPrice = price,
+                    Amount = quantity * price,
+                    UnitCostSnapshot = price
                 }
             }
         });
-        return true;
     }
 
-    private static void EnsureMasters(InventoryDbContext db, DateTime start, DateTime today)
+    private static void AddIssue(
+        DateTime date,
+        Item item,
+        decimal quantity,
+        Department department,
+        Dictionary<int, List<Lot>> lotsByItem,
+        Dictionary<Lot, decimal> remaining,
+        List<StockDocument> documents,
+        string actor)
+    {
+        if (!lotsByItem.TryGetValue(item.Id, out var bag))
+        {
+            return;
+        }
+
+        var left = quantity;
+        foreach (var lot in bag
+                     .Where(l => remaining[l] > 0
+                                 && l.ReceivedDate.Date <= date.Date
+                                 && (l.ExpiryDate == null || l.ExpiryDate.Value.Date >= date.Date))
+                     .OrderBy(l => l.ExpiryDate ?? DateTime.MaxValue))
+        {
+            if (left <= 0)
+            {
+                break;
+            }
+
+            var take = Math.Min(left, remaining[lot]);
+            remaining[lot] -= take;
+            left -= take;
+            documents.Add(new StockDocument
+            {
+                Type = DocumentType.Issue,
+                DocumentDate = date,
+                DepartmentId = department.Id,
+                UserName = actor,
+                Lines =
+                {
+                    new StockLine
+                    {
+                        ItemId = item.Id,
+                        LotNumber = lot.LotNumber,
+                        ExpiryDate = lot.ExpiryDate,
+                        Quantity = take,
+                        UnitPrice = lot.UnitCost,
+                        Amount = take * lot.UnitCost,
+                        UnitCostSnapshot = lot.UnitCost
+                    }
+                }
+            });
+        }
+    }
+
+    private static void EnsureMasters(InventoryDbContext db, DateTime start, DateTime today, int wantedItems)
     {
         foreach (var name in DepartmentNames)
         {
@@ -515,88 +408,98 @@ public static class DemoSeedService
 
         db.SaveChanges();
 
-        foreach (var row in Catalog)
+        var existingCodes = db.Items.Select(i => i.Code).ToHashSet();
+        var toCreate = Math.Max(0, wantedItems - existingCodes.Count);
+        var created = 0;
+        var lotAssigned = db.Items.Count(i => i.LotTracked);
+        var batch = new List<Item>();
+        for (var n = 1; created < toCreate; n++)
         {
-            var item = db.Items.SingleOrDefault(i => i.Code == row.Code);
-            if (item is null)
+            var code = $"P{n:00000}";
+            if (!existingCodes.Add(code))
             {
-                item = new Item
-                {
-                    Code = row.Code,
-                    Name = row.Name,
-                    Category = row.Category,
-                    Specification = row.Spec,
-                    Unit = "개",
-                    MinStock = row.Min,
-                    TargetStock = row.Min * 4,
-                    ReferencePrice = row.Price,
-                    LotTracked = true,
-                    ExpiryTracked = true,
-                    OpeningStatus = OpeningStatus.Unset
-                };
-                db.Items.Add(item);
+                continue;
+            }
+
+            var template = Templates[(n - 1) % Templates.Length];
+            var lot = lotAssigned < LotTrackedLimit && template.PreferLot;
+            if (lot)
+            {
+                lotAssigned++;
+            }
+
+            batch.Add(new Item
+            {
+                Code = code,
+                Name = $"{template.Prefix} #{n:0000}",
+                Category = template.Category,
+                Specification = template.Spec,
+                Unit = "개",
+                MinStock = lot ? 20m : 5m,
+                TargetStock = 80m,
+                ReferencePrice = template.Price,
+                LotTracked = lot,
+                ExpiryTracked = lot,
+                OpeningStatus = OpeningStatus.Unset
+            });
+            created++;
+            if (n > wantedItems + 100_000)
+            {
+                break;
+            }
+            if (batch.Count >= 400)
+            {
+                db.Items.AddRange(batch);
                 db.SaveChanges();
+                batch.Clear();
             }
-            else if (item.ReferencePrice == 0)
+        }
+
+        if (batch.Count > 0)
+        {
+            db.Items.AddRange(batch);
+            db.SaveChanges();
+        }
+
+        var items = db.Items.ToList();
+        var openingLots = new List<Lot>();
+        foreach (var item in items)
+        {
+            if (item.OpeningStatus == OpeningStatus.Confirmed)
             {
-                item.ReferencePrice = row.Price;
+                continue;
             }
 
-            if (item.OpeningStatus != OpeningStatus.Confirmed)
+            var template = Templates[Math.Abs(item.Code.GetHashCode()) % Templates.Length];
+            var qty = template.MonthlyBase * 40;
+            var lots = item.LotTracked ? 2 : 1;
+            for (var i = 0; i < lots; i++)
             {
-                for (var i = 0; i < 3; i++)
+                openingLots.Add(new Lot
                 {
-                    var qty = row.DailyBase * 40;
-                    db.Lots.Add(new Lot
-                    {
-                        ItemId = item.Id,
-                        LotNumber = $"OPEN-{row.Code}-{i + 1}",
-                        ReceivedDate = start.AddDays(-3 + i),
-                        ExpiryDate = i == 0 ? today.AddDays(25) : start.AddMonths(8 + i),
-                        Quantity = qty,
-                        UnitCost = row.Price
-                    });
-                }
-
-                item.OpeningStatus = OpeningStatus.Confirmed;
-                item.MovingAverageCost = row.Price;
+                    ItemId = item.Id,
+                    LotNumber = item.LotTracked ? $"OPEN-{item.Code}-{i + 1}" : "OPEN",
+                    ReceivedDate = start.AddDays(-2 + i),
+                    ExpiryDate = item.ExpiryTracked ? (i == 0 ? today.AddDays(40) : start.AddMonths(10)) : null,
+                    Quantity = qty,
+                    UnitCost = item.ReferencePrice > 0 ? item.ReferencePrice : template.Price
+                });
             }
+
+            item.OpeningStatus = OpeningStatus.Confirmed;
+            item.MovingAverageCost = item.ReferencePrice;
+            if (item.ReferencePrice == 0)
+            {
+                item.ReferencePrice = template.Price;
+            }
+        }
+
+        foreach (var chunk in openingLots.Chunk(400))
+        {
+            db.Lots.AddRange(chunk);
+            db.SaveChanges();
         }
 
         db.SaveChanges();
     }
-
-    private static List<DateTime> Workdays(DateTime start, DateTime end)
-    {
-        var list = new List<DateTime>();
-        for (var d = start.Date; d <= end.Date; d = d.AddDays(1))
-        {
-            if (d.DayOfWeek != DayOfWeek.Sunday)
-            {
-                list.Add(d);
-            }
-        }
-
-        return list;
-    }
-
-    private static decimal Seasonal(int month) => month switch
-    {
-        1 => 0.82m,
-        2 => 0.88m,
-        3 => 1.05m,
-        4 => 1.00m,
-        5 => 1.08m,
-        6 => 1.16m,
-        7 => 1.24m,
-        8 => 1.12m,
-        9 => 0.98m,
-        10 => 0.90m,
-        11 => 1.08m,
-        12 => 0.76m,
-        _ => 1m
-    };
-
-    private static int MonthsFrom(DateTime start, DateTime date) =>
-        (date.Year - start.Year) * 12 + date.Month - start.Month;
 }

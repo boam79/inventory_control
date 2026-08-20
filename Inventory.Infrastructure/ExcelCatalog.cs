@@ -193,6 +193,29 @@ public static class ExcelCatalog
         wb.SaveAs(path);
     }
 
+    public static void ExportReport(IReadOnlyList<ReportRow> rows, string path)
+    {
+        using var wb = new XLWorkbook();
+        var sheet = wb.AddWorksheet("통계보고서");
+        sheet.Cell(1, 1).Value = "기간";
+        sheet.Cell(1, 2).Value = "구분";
+        sheet.Cell(1, 3).Value = "사용수량";
+        sheet.Cell(1, 4).Value = "입고수량";
+        sheet.Cell(1, 5).Value = "구매금액";
+        var row = 2;
+        foreach (var item in rows)
+        {
+            sheet.Cell(row, 1).Value = item.PeriodLabel;
+            sheet.Cell(row, 2).Value = item.Dimension;
+            sheet.Cell(row, 3).Value = item.IssueQty;
+            sheet.Cell(row, 4).Value = item.ReceiptQty;
+            sheet.Cell(row, 5).Value = item.PurchaseAmount;
+            row++;
+        }
+
+        wb.SaveAs(path);
+    }
+
     private sealed record HistoryLine(DateTime Date, string ItemCode, decimal Quantity, bool Receipt, string? Supplier);
 
     private sealed record HistoryRows(IReadOnlyList<HistoryLine> Transactions, IReadOnlyList<HistoryLine> Unused, int EmptySkipped);

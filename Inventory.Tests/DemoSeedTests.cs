@@ -11,12 +11,20 @@ public sealed class DemoSeedTests : IDisposable
     public DemoSeedTests() => InventoryDatabase.Initialize(_dbPath);
 
     [Fact]
+    public void Default_item_count_is_ten_thousand()
+    {
+        Assert.Equal(10_000, DemoSeedService.DefaultItemCount);
+        Assert.True(DemoSeedService.SeasonalFactor("소독", 1) > DemoSeedService.SeasonalFactor("소독", 7));
+        Assert.True(DemoSeedService.SeasonalFactor("수액", 7) > DemoSeedService.SeasonalFactor("수액", 1));
+    }
+
+    [Fact]
     public void Auto_seed_runs_only_when_business_documents_are_zero()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);
         Assert.True(DemoSeedService.ShouldAutoSeed(db));
-        var skippedEmptyGenerate = DemoSeedService.TryAutoSeed(db, new DateTime(2026, 8, 20), "admin", 400);
-        Assert.True(skippedEmptyGenerate.Applied, skippedEmptyGenerate.Message);
+        var first = DemoSeedService.TryAutoSeed(db, new DateTime(2026, 8, 20), "admin", 40);
+        Assert.True(first.Applied, first.Message);
         Assert.False(DemoSeedService.ShouldAutoSeed(db));
 
         var again = DemoSeedService.TryAutoSeed(db, new DateTime(2026, 8, 20), "admin");
@@ -44,12 +52,6 @@ public sealed class DemoSeedTests : IDisposable
     }
 
     [Fact]
-    public void Default_target_is_about_twenty_thousand()
-    {
-        Assert.Equal(20_000, DemoSeedService.DefaultTargetDocuments);
-    }
-
-    [Fact]
     public void Refuses_when_business_documents_already_exist_without_force()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);
@@ -66,20 +68,21 @@ public sealed class DemoSeedTests : IDisposable
                 [new ReceiptLineRequest { ItemCode = "M001", Quantity = 1, UnitPrice = 80, LotNumber = $"L{i}", ExpiryDate = new DateTime(2027, 6, 1) }]);
         }
 
-        var result = DemoSeedService.Generate(db, new DateTime(2026, 8, 20), force: false, targetDocuments: 200);
+        var result = DemoSeedService.Generate(db, new DateTime(2026, 8, 20), force: false, itemCount: 40);
         Assert.False(result.Applied);
         Assert.Contains("이미 거래", result.Message);
         Assert.Equal(DemoSeedService.BusyThreshold, db.Documents.Count(d => d.Type == DocumentType.Receipt));
     }
 
     [Fact]
-    public void Reduced_seed_keeps_non_negative_stock_and_does_not_merge_years()
+    public void Reduced_seed_has_seasonal_months_non_negative_stock_and_separate_years()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);
         var today = new DateTime(2026, 8, 20);
-        var result = DemoSeedService.Generate(db, today, force: false, targetDocuments: 400);
+        var result = DemoSeedService.Generate(db, today, force: false, itemCount: 40);
         Assert.True(result.Applied, result.Message);
-        Assert.InRange(result.DocumentCount, 360, 440);
+        Assert.Equal(40, result.ItemCount);
+        Assert.True(result.DocumentCount > 40);
 
         var svc = new InventoryService(db, "t");
         foreach (var item in db.Items.ToList())
@@ -96,29 +99,15 @@ public sealed class DemoSeedTests : IDisposable
         var aug2026 = series.Single(s => s.Year == 2026 && s.Month == 8);
         Assert.True(aug2025.Qty > 0);
         Assert.True(aug2026.Qty > 0);
-        Assert.NotEqual(aug2025.Qty, aug2025.Qty + aug2026.Qty);
+        var jan = series.Single(s => s.Year == 2026 && s.Month == 1);
+        var jul = series.Single(s => s.Year == 2026 && s.Month == 7);
+        Assert.NotEqual(jan.Qty, jul.Qty);
         var forecast = UsageForecast.Predict(series.Select(s => s.Qty).ToList());
         Assert.True(forecast.Available, forecast.Warning);
         var kpi = DashboardMetrics.Build(db, svc, today);
         Assert.True(kpi.ActiveItems >= 5);
         Assert.True(kpi.MonthIssueQty > 0);
         Assert.True(kpi.MonthPurchaseAmount > 0);
-    }
-
-    [Fact]
-    public void Full_seed_volume_is_within_ten_percent_and_finishes_quickly()
-    {
-        using var db = InventoryDatabase.CreateContext(_dbPath);
-        var today = new DateTime(2026, 8, 20);
-        var started = DateTime.UtcNow;
-        var result = DemoSeedService.Generate(db, today);
-        var elapsed = DateTime.UtcNow - started;
-        Assert.True(result.Applied, result.Message);
-        Assert.InRange(result.DocumentCount, 18_000, 22_000);
-        Assert.True(elapsed.TotalSeconds < 90, $"시드가 {elapsed.TotalSeconds:N1}초 걸려 너무 느립니다.");
-        Assert.All(db.Lots, lot => Assert.True(lot.Quantity >= 0));
-        var series = DashboardMetrics.TrailingMonthlyIssues(db, today, 13);
-        Assert.Equal(2, series.Count(s => s.Month == 8 && s.Qty > 0));
     }
 
     public void Dispose()

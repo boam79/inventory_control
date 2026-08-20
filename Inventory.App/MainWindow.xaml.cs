@@ -165,7 +165,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        SetAlert("거래가 없어 테스트 데이터(약 2만 건)를 넣는 중입니다...", isWarning: false);
+        SetAlert("거래가 없어 테스트 데이터(품목 약 1만)를 넣는 중입니다...", isWarning: false);
         Mouse.OverrideCursor = Cursors.Wait;
         try
         {

@@ -8,6 +8,6 @@ public static class ProductInfo
 {
     public const string Name = "SpringClinic.Inventory";
     public const string DisplayName = "스프링의원 재고관리";
-    public const string Version = "1.0.1";
+    public const string Version = "1.0.2";
     public const string PackId = "SpringClinic.Inventory";
 }
