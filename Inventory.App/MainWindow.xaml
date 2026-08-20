@@ -4,34 +4,39 @@
         Title="스프링의원 재고관리"
         Height="768" Width="1366"
         MinHeight="600" MinWidth="1100"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Background="#EEF1F4">
     <DockPanel>
-        <Border DockPanel.Dock="Top" Padding="12,8" Background="#F4F4F4" BorderBrush="#DDD" BorderThickness="0,0,0,1">
-            <DockPanel>
-                <Button x:Name="LogoutButton" DockPanel.Dock="Right" Content="로그아웃" Margin="8,0,0,0"
-                        Padding="10,2" Click="Logout_Click"/>
-                <TextBlock x:Name="VersionLabel" DockPanel.Dock="Right" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                <TextBlock x:Name="UserLabel" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                <TextBlock x:Name="PeriodLabel" Margin="16,0,8,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
-            </DockPanel>
+        <Border DockPanel.Dock="Top" Padding="14,10" Background="#2F3E4D">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <WrapPanel VerticalAlignment="Center">
+                    <Border Style="{StaticResource HeaderChip}">
+                        <TextBlock x:Name="UserLabel" Style="{StaticResource HeaderText}"/>
+                    </Border>
+                    <Border Style="{StaticResource HeaderChip}">
+                        <TextBlock x:Name="PeriodLabel" Style="{StaticResource HeaderText}"/>
+                    </Border>
+                    <Border x:Name="AlertChip" Style="{StaticResource HeaderChip}" MaxWidth="520">
+                        <TextBlock x:Name="AlertLabel" Style="{StaticResource HeaderText}" TextWrapping="Wrap"/>
+                    </Border>
+                    <Border Style="{StaticResource HeaderChip}">
+                        <TextBlock x:Name="VersionLabel" Style="{StaticResource HeaderText}"/>
+                    </Border>
+                </WrapPanel>
+                <Button x:Name="LogoutButton" Grid.Column="1" Content="로그아웃"
+                        Padding="14,6" VerticalAlignment="Center" Click="Logout_Click"/>
+            </Grid>
         </Border>
-        <ListBox x:Name="MenuList" DockPanel.Dock="Left" Width="180" MinWidth="160" SelectionChanged="MenuList_SelectionChanged">
-            <ListBoxItem Content="대시보드" Tag="dashboard"/>
-            <ListBoxItem Content="입고 등록" Tag="receive"/>
-            <ListBoxItem Content="사용 등록" Tag="issue"/>
-            <ListBoxItem Content="재고현황" Tag="stock"/>
-            <ListBoxItem Content="거래내역" Tag="ledger"/>
-            <ListBoxItem Content="LOT·유효기간" Tag="lots"/>
-            <ListBoxItem Content="발주 필요 품목" Tag="reorder"/>
-            <ListBoxItem Content="통계·보고서" Tag="stats"/>
-            <ListBoxItem Content="월 마감" Tag="close"/>
-            <ListBoxItem Content="기준정보" Tag="masters"/>
-            <ListBoxItem Content="사용자·권한" Tag="users"/>
-            <ListBoxItem Content="백업·복원" Tag="backup"/>
-            <ListBoxItem Content="환경설정" Tag="settings"/>
-        </ListBox>
-        <!-- MinWidth/MinHeight는 Inventory.Core.UiLayout과 같아야 함 (1366×768 설계, 스크롤로 잘림 완화). -->
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <Border DockPanel.Dock="Left" Background="#F7F8FA" BorderBrush="#D8DEE4" BorderThickness="0,0,1,0">
+            <ListBox x:Name="MenuList" Style="{StaticResource ShellMenuList}"
+                     SelectionChanged="MenuList_SelectionChanged"/>
+        </Border>
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                      Background="#EEF1F4">
             <ContentControl x:Name="MainContent" Margin="16" MinWidth="900"/>
         </ScrollViewer>
     </DockPanel>

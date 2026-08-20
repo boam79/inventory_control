@@ -1,5 +1,7 @@
 namespace Inventory.Infrastructure;
 
+public sealed record MonthlyQty(int Year, int Month, decimal Qty);
+
 public sealed record DashboardKpi(
     int ActiveItems,
     int ReorderItems,
@@ -46,4 +48,32 @@ public static class DashboardMetrics
                 .Sum(l => (decimal?)l.Quantity) ?? 0m))
             .Where(row => row.Qty > 0)
             .ToList();
+
+    public static IReadOnlyList<MonthlyQty> TrailingMonthlyIssues(InventoryDbContext db, DateTime today, int months = 13)
+    {
+        var end = new DateTime(today.Year, today.Month, 1);
+        var start = end.AddMonths(1 - months);
+        var endExclusive = end.AddMonths(1);
+        var grouped = db.Documents
+            .Where(d => d.Type == DocumentType.Issue && !d.IsCancelled
+                        && d.DocumentDate >= start && d.DocumentDate < endExclusive)
+            .Select(d => new { d.Id, d.DocumentDate })
+            .ToList()
+            .Join(
+                db.StockLines.Select(line => new { line.DocumentId, line.Quantity }).ToList(),
+                doc => doc.Id,
+                line => line.DocumentId,
+                (doc, line) => (doc.DocumentDate.Year, doc.DocumentDate.Month, line.Quantity))
+            .GroupBy(row => (row.Year, row.Month))
+            .ToDictionary(g => g.Key, g => g.Sum(row => row.Quantity));
+
+        return Enumerable.Range(0, months)
+            .Select(offset =>
+            {
+                var monthDate = start.AddMonths(offset);
+                grouped.TryGetValue((monthDate.Year, monthDate.Month), out var qty);
+                return new MonthlyQty(monthDate.Year, monthDate.Month, qty);
+            })
+            .ToList();
+    }
 }

@@ -6,5 +6,5 @@ public static class UiLayout
     public const int DesignHeight = 768;
     public const int MinWidth = 1100;
     public const int MinHeight = 600;
-    public const int MenuWidth = 180;
+    public const int MenuWidth = 208;
 }
