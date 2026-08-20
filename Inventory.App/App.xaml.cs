@@ -1,13 +1,49 @@
-﻿using System.Configuration;
-using System.Data;
+﻿using Inventory.Core;
+using Inventory.Infrastructure;
+using Serilog;
 using System.Windows;
+using System.Windows.Threading;
 
 namespace Inventory.App;
 
-/// <summary>
-/// Interaction logic for App.xaml
-/// </summary>
 public partial class App : Application
 {
-}
+    private ILogger? _log;
 
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        var logDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SpringClinicInventory",
+            "logs");
+        _log = AppLog.CreateFileLogger(logDir);
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is Exception ex)
+            {
+                _log?.Error(ex, AppLog.Sanitize(ex.Message));
+            }
+        };
+        base.OnStartup(e);
+    }
+
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        _log?.Error(e.Exception, AppLog.Sanitize(e.Exception.Message));
+        MessageBox.Show(
+            "원인: 프로그램 오류가 발생했습니다.\n조치: 작업을 저장했는지 확인한 뒤 계속 사용하세요. 반복되면 백업 후 관리자에게 알리세요.",
+            ProductInfo.DisplayName);
+        e.Handled = true;
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        if (_log is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
+        base.OnExit(e);
+    }
+}
