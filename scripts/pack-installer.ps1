@@ -10,6 +10,7 @@ $PublishDir = Join-Path $Root "publish"
 $DistDir = Join-Path $Root "dist"
 $PackId = "SpringClinic.Inventory"
 $MainExe = "Inventory.App.exe"
+$PackTitle = [string]([char]0xC2A4) + [string]([char]0xD504) + [string]([char]0xB9C1) + [string]([char]0xC758) + [string]([char]0xC6D0) + " " + [string]([char]0xC7AC) + [string]([char]0xACE0) + [string]([char]0xAD00) + [string]([char]0xB9AC)
 
 New-Item -ItemType Directory -Force -Path $PublishDir, $DistDir | Out-Null
 if (Test-Path $DistDir) {
@@ -31,7 +32,7 @@ dotnet tool run vpk -- pack `
     --packId $PackId `
     --packVersion $Version `
     --packDir $PublishDir `
-    --packTitle "스프링의원 재고관리" `
+    --packTitle $PackTitle `
     --packAuthors "SpringClinic" `
     --mainExe $MainExe `
     --outputDir $DistDir `
