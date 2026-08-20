@@ -35,8 +35,10 @@ DB는 설치 폴더가 아니라 `%LOCALAPPDATA%\SpringClinicInventory\inventory
 `gh`로 릴리스에 올리려면 (로그인 후):
 
 ```text
-gh release create v1.0.0 dist/*Setup.exe dist/*.sha256 --repo boam79/inventory_control --title "v1.0.0" --notes "스프링의원 재고관리 설치본"
+gh release create v1.0.1 dist/*Setup.exe dist/*.sha256 --repo boam79/inventory_control --title "v1.0.1" --notes "UI 개선, 빈 DB 시 테스트 데이터, 설치본"
 ```
+
+다운로드: https://github.com/boam79/inventory_control/releases/download/v1.0.1/SpringClinic.Inventory-win-Setup.exe
 
 큰 exe는 git에 넣지 않습니다. 빌드 스크립트만 커밋합니다.
 
@@ -79,9 +81,11 @@ dotnet publish Inventory.App -c Release -r win-x64 --self-contained true -o publ
 
 ## 테스트 데이터 (대시보드·예측 확인용)
 
-운영 의원 DB를 조용히 덮어쓰지 않습니다. 거래가 이미 많으면 거부하거나 한 번 더 확인합니다.
+**거래가 0건이면 관리자 로그인 후 자동으로** 약 2만 건(1년치)을 넣습니다. 실제 입고·사용이 한 건이라도 있으면 자동 시드하지 않습니다.
 
-**설치본:** 관리자로 로그인 → **환경설정** → **테스트 데이터 생성 (약 2만 건)**. 약 1년치 입고·사용이 추가됩니다. 끝나면 대시보드로 돌아가 KPI 카드와 월별 그래프를 확인하세요.
+대시보드 상단의 큰 버튼 **테스트 데이터 생성** 또는 환경설정(관리자)에서도 같은 작업을 할 수 있습니다.
+
+운영 의원 DB를 조용히 덮어쓰지 않습니다. 거래가 이미 많으면 거부하거나 한 번 더 확인합니다.
 
 개발 PC:
 

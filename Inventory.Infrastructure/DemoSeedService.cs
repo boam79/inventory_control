@@ -34,6 +34,28 @@ public static class DemoSeedService
             || d.Type == DocumentType.Issue
             || d.Type == DocumentType.Adjustment);
 
+    public static bool ShouldAutoSeed(InventoryDbContext db) =>
+        CountBusinessDocuments(db) == 0;
+
+    public static DemoSeedResult TryAutoSeed(
+        InventoryDbContext db,
+        DateTime today,
+        string actor = "demo-seed",
+        int? targetDocuments = null)
+    {
+        if (!ShouldAutoSeed(db))
+        {
+            var existing = CountBusinessDocuments(db);
+            return new DemoSeedResult(
+                false,
+                existing,
+                db.Items.Count(),
+                $"거래 {existing}건이 있어 자동 시드하지 않았습니다. 기존 입고·사용은 그대로입니다.");
+        }
+
+        return Generate(db, today, force: false, targetDocuments: targetDocuments, actor: actor);
+    }
+
     public static DemoSeedResult Generate(
         InventoryDbContext db,
         DateTime today,

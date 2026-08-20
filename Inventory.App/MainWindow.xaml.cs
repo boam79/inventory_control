@@ -3,13 +3,15 @@ using Inventory.Infrastructure;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
 
 namespace Inventory.App;
 
 public partial class MainWindow : Window
 {
+    private string? _seedNote;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -27,7 +29,6 @@ public partial class MainWindow : Window
         AlertLabel.Text = "알림 없음";
         BuildMenu();
         Loaded += MainWindow_Loaded;
-        MenuList.SelectedIndex = 0;
     }
 
     private void BuildMenu()
@@ -112,6 +113,9 @@ public partial class MainWindow : Window
             BackupService.RunDailyBackupIfNeeded(AppHost.DatabasePath, folder, DateTime.Today);
         }
 
+        TryAutoSeedIfEmpty();
+        MenuList.SelectedIndex = 0;
+
         var update = await UpdateChecker.CheckAsync();
         SetAlert(update.Message, isWarning: !update.Checked);
         try
@@ -141,6 +145,42 @@ public partial class MainWindow : Window
         {
             SetAlert("업데이트를 확인하지 못했습니다. 재고 업무를 계속하세요.", isWarning: true);
         }
+
+        if (!string.IsNullOrWhiteSpace(_seedNote))
+        {
+            SetAlert(_seedNote, isWarning: false);
+        }
+    }
+
+    private void TryAutoSeedIfEmpty()
+    {
+        if (AppSession.Current?.Role != UserRole.Administrator)
+        {
+            return;
+        }
+
+        using var db = AppHost.OpenDb();
+        if (!DemoSeedService.ShouldAutoSeed(db))
+        {
+            return;
+        }
+
+        SetAlert("거래가 없어 테스트 데이터(약 2만 건)를 넣는 중입니다...", isWarning: false);
+        Mouse.OverrideCursor = Cursors.Wait;
+        try
+        {
+            var result = DemoSeedService.TryAutoSeed(db, DateTime.Today, AppHost.Actor);
+            _seedNote = result.Message;
+            SetAlert(result.Message, isWarning: !result.Applied);
+        }
+        catch (Exception ex)
+        {
+            SetAlert($"테스트 데이터를 만들지 못했습니다: {AppLog.Sanitize(ex.Message)}", isWarning: true);
+        }
+        finally
+        {
+            Mouse.OverrideCursor = null;
+        }
     }
 
     private void SetAlert(string message, bool isWarning)
@@ -156,6 +196,12 @@ public partial class MainWindow : Window
             AlertChip.Background = (Brush)FindResource("ClinicHeaderChipBrush");
             AlertLabel.Foreground = Brushes.White;
         }
+    }
+
+    public void ShowDashboard()
+    {
+        MenuList.SelectedIndex = -1;
+        MenuList.SelectedIndex = 0;
     }
 
     private void Logout_Click(object sender, RoutedEventArgs e)

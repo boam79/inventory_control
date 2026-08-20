@@ -11,6 +11,39 @@ public sealed class DemoSeedTests : IDisposable
     public DemoSeedTests() => InventoryDatabase.Initialize(_dbPath);
 
     [Fact]
+    public void Auto_seed_runs_only_when_business_documents_are_zero()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        Assert.True(DemoSeedService.ShouldAutoSeed(db));
+        var skippedEmptyGenerate = DemoSeedService.TryAutoSeed(db, new DateTime(2026, 8, 20), "admin", 400);
+        Assert.True(skippedEmptyGenerate.Applied, skippedEmptyGenerate.Message);
+        Assert.False(DemoSeedService.ShouldAutoSeed(db));
+
+        var again = DemoSeedService.TryAutoSeed(db, new DateTime(2026, 8, 20), "admin");
+        Assert.False(again.Applied);
+        Assert.Contains("거래", again.Message);
+    }
+
+    [Fact]
+    public void Auto_seed_skips_when_a_real_receipt_exists()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 20, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("M001");
+        svc.Receive(
+            new DateTime(2026, 2, 1),
+            null,
+            "REAL-1",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 1, UnitPrice = 80, LotNumber = "LIVE", ExpiryDate = new DateTime(2027, 6, 1) }]);
+        Assert.False(DemoSeedService.ShouldAutoSeed(db));
+        var result = DemoSeedService.TryAutoSeed(db, new DateTime(2026, 8, 20));
+        Assert.False(result.Applied);
+        Assert.Equal(1, db.Documents.Count(d => d.Type == DocumentType.Receipt));
+    }
+
+    [Fact]
     public void Default_target_is_about_twenty_thousand()
     {
         Assert.Equal(20_000, DemoSeedService.DefaultTargetDocuments);

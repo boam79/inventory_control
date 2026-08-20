@@ -9,6 +9,7 @@ using SkiaSharp;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace Inventory.App.Views;
@@ -67,7 +68,38 @@ public sealed class DashboardView : WorkspaceView
 
         var panel = new StackPanel();
         panel.Children.Add(Title("대시보드"));
-        panel.Children.Add(Note("발주 필요·품절은 강조 색입니다. 예측은 참고용이며 자동 발주하지 않습니다."));
+        if (DemoSeedService.ShouldAutoSeed(db) && AppSession.Current?.Role == UserRole.Administrator)
+        {
+            var seedButton = Btn("테스트 데이터 생성 (약 2만 건 · 1년치)", (_, _) =>
+            {
+                Mouse.OverrideCursor = Cursors.Wait;
+                try
+                {
+                    var message = AppHost.Run((inner, _) =>
+                        DemoSeedService.TryAutoSeed(inner, DateTime.Today, AppHost.Actor).Message);
+                    Alert(message);
+                    var host = Window.GetWindow(this);
+                    if (host is MainWindow main)
+                    {
+                        main.ShowDashboard();
+                    }
+                }
+                finally
+                {
+                    Mouse.OverrideCursor = null;
+                }
+            });
+            seedButton.FontSize = 16;
+            seedButton.Padding = new Thickness(18, 12, 18, 12);
+            seedButton.MinHeight = 48;
+            seedButton.HorizontalAlignment = HorizontalAlignment.Left;
+            panel.Children.Add(seedButton);
+            panel.Children.Add(Note("입고·사용 거래가 없습니다. 이 버튼을 누르면 대시보드·예측용 가상 데이터가 생깁니다. 실제 거래가 있으면 자동으로 넣지 않습니다."));
+        }
+        else
+        {
+            panel.Children.Add(Note("발주 필요·품절은 강조 색입니다. 예측은 참고용이며 자동 발주하지 않습니다."));
+        }
         var cards = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
         cards.Children.Add(KpiCard("사용 품목", kpi.ActiveItems.ToString("N0")));
         cards.Children.Add(KpiCard("발주 필요", kpi.ReorderItems.ToString("N0"), warn: kpi.ReorderItems > 0));
