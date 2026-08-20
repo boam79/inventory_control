@@ -7,7 +7,10 @@ public sealed class LoginAttempt
     public UserRole? Role { get; init; }
     public PermissionFlags? Permissions { get; init; }
 
-    public static LoginAttempt Fail() => new() { Succeeded = false };
+    public LoginFailureReason FailureReason { get; init; }
+
+    public static LoginAttempt Fail(LoginFailureReason reason = LoginFailureReason.InvalidCredentials) =>
+        new() { Succeeded = false, FailureReason = reason };
 
     public static LoginAttempt Success(string userName, UserRole role) => new()
     {

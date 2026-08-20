@@ -1,0 +1,33 @@
+<Window x:Class="Inventory.App.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="스프링의원 재고관리 - 로그인"
+        Height="360" Width="420"
+        MinHeight="320" MinWidth="360"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <TextBlock FontSize="18" FontWeight="SemiBold" Text="스프링의원 재고관리"/>
+        <TextBlock x:Name="FirstAdminHint" Grid.Row="1" Margin="0,8,0,8" TextWrapping="Wrap"
+                   Text="처음 실행입니다. 관리자 아이디와 비밀번호를 만든 뒤 시작하세요."/>
+        <StackPanel Grid.Row="2" Margin="0,8,0,0">
+            <Label Content="아이디"/>
+            <TextBox x:Name="UserNameBox" TabIndex="0"/>
+            <Label Content="비밀번호"/>
+            <PasswordBox x:Name="PasswordBox" TabIndex="1" KeyDown="PasswordBox_KeyDown"/>
+        </StackPanel>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,16,0,0">
+            <Button Content="로그인" Width="100" IsDefault="True" Click="Login_Click" TabIndex="2"/>
+            <Button x:Name="CreateAdminButton" Content="관리자 만들기" Width="120" Margin="8,0,0,0"
+                    Click="CreateAdmin_Click" TabIndex="3"/>
+        </StackPanel>
+        <TextBlock x:Name="ErrorText" Grid.Row="4" Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#B00020"/>
+    </Grid>
+</Window>
