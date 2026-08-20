@@ -671,7 +671,7 @@ public sealed class SettingsView : WorkspaceView
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel();
         panel.Children.Add(Title("환경설정"));
-        panel.Children.Add(new TextBlock { Text = $"앱 버전 {ProductInfo.Name}" });
+        panel.Children.Add(new TextBlock { Text = $"앱 버전 {ProductInfo.DisplayName} {ProductInfo.Version}" });
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         row.Children.Add(new TextBlock { Text = "유효기간 경고일", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
         row.Children.Add(days);
@@ -686,7 +686,23 @@ public sealed class SettingsView : WorkspaceView
             status.Text = "저장했습니다.";
         }));
         panel.Children.Add(row);
+        panel.Children.Add(Btn("업데이트 확인", async (_, _) =>
+        {
+            status.Text = await VelopackUpdater.CheckAndDownloadAsync();
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = UpdateChecker.ReleasesUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                status.Text += $"\n브라우저에서 {UpdateChecker.ReleasesUrl} 를 열어 Setup.exe를 받으세요.";
+            }
+        }));
         panel.Children.Add(status);
-        Content = panel;
+        Content = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }
 }

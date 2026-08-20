@@ -21,7 +21,7 @@ public partial class MainWindow : Window
             ? "사용자 없음"
             : $"사용자: {session.UserName} ({session.Role})";
         PeriodLabel.Text = $"기준: {DateTime.Today:yyyy년 M월}";
-        VersionLabel.Text = $"버전 {ProductInfo.Name}";
+        VersionLabel.Text = $"버전 {ProductInfo.Version}";
         Loaded += MainWindow_Loaded;
         MenuList.SelectedIndex = 0;
     }
@@ -64,6 +64,9 @@ public partial class MainWindow : Window
             {
                 PeriodLabel.Text += "  · 검증된 업데이트가 대기 폴더에 있습니다.";
             }
+
+            var velo = await VelopackUpdater.CheckAndDownloadAsync();
+            PeriodLabel.Text += "  · " + velo.Split('\n')[0];
         }
         catch
         {

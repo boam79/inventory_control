@@ -15,5 +15,7 @@ appsettings.*.local.json
 *.db-wal
 .env
 *.pfx
-nupkg/
-*.nupkg
+dist/
+artifacts/
+publish/
+Releases/
