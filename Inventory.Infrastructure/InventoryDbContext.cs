@@ -10,6 +10,7 @@ public sealed class InventoryDbContext : DbContext
     }
 
     public DbSet<AppMeta> AppMeta => Set<AppMeta>();
+    public DbSet<UserAccount> Users => Set<UserAccount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,6 +21,16 @@ public sealed class InventoryDbContext : DbContext
             entity.Property(row => row.Key).HasMaxLength(64).IsRequired();
             entity.Property(row => row.Value).HasMaxLength(256).IsRequired();
             entity.HasIndex(row => row.Key).IsUnique();
+        });
+
+        modelBuilder.Entity<UserAccount>(entity =>
+        {
+            entity.ToTable("Users");
+            entity.HasKey(row => row.Id);
+            entity.Property(row => row.UserName).HasMaxLength(64).IsRequired();
+            entity.Property(row => row.PasswordHash).HasMaxLength(256).IsRequired();
+            entity.Property(row => row.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.HasIndex(row => row.UserName).IsUnique();
         });
     }
 }
