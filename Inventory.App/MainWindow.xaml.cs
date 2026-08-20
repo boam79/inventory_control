@@ -1,6 +1,5 @@
 ﻿using Inventory.Core;
 using Inventory.Infrastructure;
-using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -116,29 +115,13 @@ public partial class MainWindow : Window
         TryAutoSeedIfEmpty();
         MenuList.SelectedIndex = 0;
 
-        var update = await UpdateChecker.CheckAsync();
-        SetAlert(update.Message, isWarning: !update.Checked);
         try
         {
-            var stage = global::System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "SpringClinicInventory",
-                "updates");
-            var marker = global::System.IO.Path.Combine(stage, "current.marker");
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
-            var staged = await UpdateChecker.TryStageLatestIfPresentAsync(
-                client,
-                AppHost.DatabasePath,
-                stage,
-                marker);
-            if (staged is { Applied: true })
-            {
-                SetAlert(AlertLabel.Text + " 검증된 업데이트가 대기 폴더에 있습니다.", isWarning: false);
-            }
-
-            var velo = await VelopackUpdater.CheckAndDownloadAsync();
-            var first = velo.Split('\n')[0];
-            var warn = first.Contains("실패", StringComparison.Ordinal) || first.Contains("못", StringComparison.Ordinal);
+            var update = await VelopackUpdater.CheckStatusAsync();
+            var first = update.Split('\n')[0];
+            var warn = first.Contains("실패", StringComparison.Ordinal)
+                       || first.Contains("못", StringComparison.Ordinal)
+                       || first.Contains("원인", StringComparison.Ordinal);
             SetAlert(first, warn);
         }
         catch
@@ -202,6 +185,36 @@ public partial class MainWindow : Window
     {
         MenuList.SelectedIndex = -1;
         MenuList.SelectedIndex = 0;
+    }
+
+    private async void Update_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        SetAlert("업데이트를 준비하는 중...", isWarning: false);
+        try
+        {
+            var progress = new Progress<string>(text =>
+            {
+                var first = (text ?? "").Split('\n')[0];
+                SetAlert(string.IsNullOrWhiteSpace(first) ? "업데이트 중..." : first, isWarning: false);
+            });
+            var result = await VelopackUpdater.ApplyFromButtonAsync(progress, applyAndRestart: true);
+            var warn = result.Contains("원인", StringComparison.Ordinal)
+                       || result.Contains("설치본이 아닙니다", StringComparison.Ordinal);
+            SetAlert(result.Split('\n')[0], warn);
+            if (result.Contains("설치본이 아닙니다", StringComparison.Ordinal))
+            {
+                MessageBox.Show(result, ProductInfo.DisplayName, MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetAlert($"원인: {AppLog.Sanitize(ex.Message)} 입고·사용은 계속하세요.", isWarning: true);
+        }
+        finally
+        {
+            UpdateButton.IsEnabled = true;
+        }
     }
 
     private void Logout_Click(object sender, RoutedEventArgs e)

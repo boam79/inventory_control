@@ -27,8 +27,12 @@
                         <TextBlock x:Name="VersionLabel" Style="{StaticResource HeaderText}"/>
                     </Border>
                 </WrapPanel>
-                <Button x:Name="LogoutButton" Grid.Column="1" Content="로그아웃"
-                        Padding="14,6" VerticalAlignment="Center" Click="Logout_Click"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="UpdateButton" Content="업데이트"
+                            Padding="14,6" Margin="0,0,8,0" Click="Update_Click"/>
+                    <Button x:Name="LogoutButton" Content="로그아웃"
+                            Padding="14,6" Click="Logout_Click"/>
+                </StackPanel>
             </Grid>
         </Border>
         <Border DockPanel.Dock="Left" Background="#F7F8FA" BorderBrush="#D8DEE4" BorderThickness="0,0,1,0">

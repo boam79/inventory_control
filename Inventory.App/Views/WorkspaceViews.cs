@@ -989,22 +989,56 @@ public sealed class SettingsView : WorkspaceView
             }));
         }
 
-        panel.Children.Add(Btn("업데이트 확인", async (_, _) =>
+        panel.Children.Add(Note("업데이트는 상단의 「업데이트」 또는 아래 버튼입니다. 설치본에서만 자동 적용됩니다. 개발 실행(dotnet run)에서는 Setup.exe를 받아 설치하세요."));
+        var progressBar = new ProgressBar
         {
-            status.Text = await VelopackUpdater.CheckAndDownloadAsync();
+            Height = 16,
+            Minimum = 0,
+            Maximum = 100,
+            Margin = new Thickness(0, 8, 0, 8),
+            Visibility = Visibility.Collapsed
+        };
+        Button? updateBtn = null;
+        updateBtn = Btn("업데이트", async (_, _) =>
+        {
+            if (updateBtn is not null)
+            {
+                updateBtn.IsEnabled = false;
+            }
+            progressBar.Visibility = Visibility.Visible;
+            progressBar.Value = 0;
+            status.Text = "업데이트를 준비하는 중...";
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                var progress = new Progress<string>(text =>
                 {
-                    FileName = UpdateChecker.ReleasesUrl,
-                    UseShellExecute = true
+                    status.Text = text;
+                    var digits = System.Text.RegularExpressions.Regex.Match(text ?? "", @"(\d+)\s*%");
+                    if (digits.Success && int.TryParse(digits.Groups[1].Value, out var pct))
+                    {
+                        progressBar.Value = Math.Clamp(pct, 0, 100);
+                    }
                 });
+                status.Text = await VelopackUpdater.ApplyFromButtonAsync(progress, applyAndRestart: true);
             }
-            catch
+            catch (Exception ex)
             {
-                status.Text += $"\n브라우저에서 {UpdateChecker.ReleasesUrl} 를 열어 Setup.exe를 받으세요.";
+                status.Text = $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·사용은 계속하세요. {UpdateChecker.ReleasesUrl}";
             }
-        }));
+            finally
+            {
+                if (updateBtn is not null)
+                {
+                    updateBtn.IsEnabled = true;
+                }
+                if (progressBar.Value < 100)
+                {
+                    progressBar.Visibility = Visibility.Collapsed;
+                }
+            }
+        });
+        panel.Children.Add(updateBtn);
+        panel.Children.Add(progressBar);
         panel.Children.Add(status);
         Content = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }

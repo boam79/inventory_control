@@ -6,6 +6,15 @@ namespace Inventory.Infrastructure;
 
 public sealed record UpdateCheckResult(bool Checked, string Message, string FeedUrl);
 
+public sealed record LatestReleaseOffer(
+    bool Found,
+    string VersionTag,
+    string? PackageUrl,
+    string? Sha256Url,
+    string? Sha256Hex,
+    bool HashRequired,
+    string Message);
+
 public sealed record PackageApplyResult(
     bool Applied,
     bool KeptCurrent,
@@ -17,6 +26,7 @@ public static class UpdateChecker
 {
     public const string ReleasesUrl = "https://github.com/boam79/inventory_control/releases";
     public const string LatestApi = "https://api.github.com/repos/boam79/inventory_control/releases/latest";
+    public const string SetupFileName = "SpringClinic.Inventory-win-Setup.exe";
 
     public static async Task<UpdateCheckResult> CheckAsync(HttpClient? client = null)
     {
@@ -39,6 +49,129 @@ public static class UpdateChecker
         catch
         {
             return new UpdateCheckResult(false, "업데이트 서버에 연결하지 못했습니다. 오프라인에서도 핵심 재고 기능은 동작합니다.", ReleasesUrl);
+        }
+        finally
+        {
+            if (owns)
+            {
+                client.Dispose();
+            }
+        }
+    }
+
+    public static string SetupDownloadUrl(string? tagName) =>
+        string.IsNullOrWhiteSpace(tagName)
+            ? ReleasesUrl
+            : $"https://github.com/boam79/inventory_control/releases/download/{tagName.Trim()}/{SetupFileName}";
+
+    public static bool HashesMatch(string? expectedHex, string? actualHex) =>
+        !string.IsNullOrWhiteSpace(expectedHex)
+        && !string.IsNullOrWhiteSpace(actualHex)
+        && expectedHex.Trim().Equals(actualHex.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    public static LatestReleaseOffer ParseLatestRelease(string json, string? sha256Hex = null)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return ParseLatestRelease(doc.RootElement, sha256Hex);
+    }
+
+    public static LatestReleaseOffer ParseLatestRelease(JsonElement root, string? sha256Hex = null)
+    {
+        var tag = root.TryGetProperty("tag_name", out var name) ? name.GetString() ?? "" : "";
+        if (string.IsNullOrWhiteSpace(tag) || !root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+        {
+            return new LatestReleaseOffer(false, tag, null, null, null, false, "새 설치 버전이 없습니다. 재고 업무를 계속하세요.");
+        }
+
+        string? setupUrl = null;
+        string? nupkgUrl = null;
+        string? zipUrl = null;
+        string? otherExe = null;
+        string? shaUrl = null;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            var file = asset.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                continue;
+            }
+
+            if (file.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase))
+            {
+                shaUrl = url;
+            }
+            else if (file.Equals(SetupFileName, StringComparison.OrdinalIgnoreCase)
+                     || (file.Contains("Setup", StringComparison.OrdinalIgnoreCase) && file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
+            {
+                setupUrl = url;
+            }
+            else if (file.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase))
+            {
+                nupkgUrl = url;
+            }
+            else if (file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                zipUrl = url;
+            }
+            else if (file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                otherExe ??= url;
+            }
+        }
+
+        var packageUrl = setupUrl ?? nupkgUrl ?? zipUrl ?? otherExe;
+        if (packageUrl is null)
+        {
+            return new LatestReleaseOffer(false, tag, null, shaUrl, sha256Hex, shaUrl is not null, "새 설치 파일이 없습니다. 재고 업무를 계속하세요.");
+        }
+
+        var hashRequired = shaUrl is not null;
+        var message = $"최신 {tag}\n다운로드: {packageUrl}";
+        return new LatestReleaseOffer(true, tag, packageUrl, shaUrl, sha256Hex, hashRequired, message);
+    }
+
+    public static async Task<LatestReleaseOffer> InspectLatestAsync(HttpClient? client = null)
+    {
+        var owns = client is null;
+        client ??= new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+        try
+        {
+            EnsureUserAgent(client);
+            using var response = await client.GetAsync(LatestApi);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new LatestReleaseOffer(false, "", null, null, null, false, "업데이트를 확인하지 못했습니다. 재고 업무는 계속할 수 있습니다.");
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            var offer = ParseLatestRelease(json);
+            if (!offer.Found || string.IsNullOrWhiteSpace(offer.Sha256Url))
+            {
+                return offer;
+            }
+
+            try
+            {
+                var hashText = (await client.GetStringAsync(offer.Sha256Url)).Trim();
+                var hex = hashText.Split(' ', '\n', '\t', '\r')[0];
+                return offer with
+                {
+                    Sha256Hex = hex,
+                    Message = $"{offer.Message}\nSHA256: {hex}"
+                };
+            }
+            catch (Exception ex)
+            {
+                return offer with
+                {
+                    Message = $"원인: 해시 파일을 읽지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 지금 버전을 유지합니다. 입고·사용은 계속하세요."
+                };
+            }
+        }
+        catch
+        {
+            return new LatestReleaseOffer(false, "", null, null, null, false, "업데이트 서버에 연결하지 못했습니다. 오프라인에서도 핵심 재고 기능은 동작합니다.");
         }
         finally
         {
