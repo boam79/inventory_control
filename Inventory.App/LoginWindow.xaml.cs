@@ -15,11 +15,16 @@ public partial class LoginWindow : Window
         InitializeComponent();
         var dbPath = SqliteConnectionString.DefaultDatabasePath();
         InventoryDatabase.Initialize(dbPath);
+        var integrity = IntegrityCheck.Run(dbPath);
         _db = InventoryDatabase.CreateContext(dbPath);
         _login = new LoginController(_db);
         FirstAdminHint.Visibility = _login.NeedsFirstAdmin ? Visibility.Visible : Visibility.Collapsed;
         CreateAdminButton.Visibility = _login.NeedsFirstAdmin ? Visibility.Visible : Visibility.Collapsed;
         UserNameBox.Focus();
+        if (integrity != "정상")
+        {
+            ErrorText.Text = integrity;
+        }
     }
 
     private void Login_Click(object sender, RoutedEventArgs e) => TryLogin();

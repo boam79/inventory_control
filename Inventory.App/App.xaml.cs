@@ -12,7 +12,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        var logDir = Path.Combine(
+        var logDir = System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "SpringClinicInventory",
             "logs");
