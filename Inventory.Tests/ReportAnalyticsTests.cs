@@ -51,6 +51,29 @@ public sealed class ReportAnalyticsTests : IDisposable
         Assert.Contains("2025-03-01", custom.Single().PeriodLabel);
     }
 
+    [Fact]
+    public void Month_close_preview_counts_receipts_and_issues()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M009", "거즈", "드레싱", "개", "개", 10);
+        svc.SaveOpeningDraft("M009", "OPEN", 50, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("M009");
+        svc.Receive(new DateTime(2026, 8, 2), null, "R08",
+            [new ReceiptLineRequest { ItemCode = "M009", Quantity = 5, UnitPrice = 100, LotNumber = "C", ExpiryDate = new DateTime(2027, 1, 1) }]);
+        svc.Issue(new DateTime(2026, 8, 3), null, [new IssueLineRequest { ItemCode = "M009", Quantity = 2, LotNumber = "C" }]);
+
+        var preview = ReportAnalytics.PreviewMonth(db, 2026, 8);
+        Assert.False(preview.IsClosed);
+        Assert.Equal(1, preview.ReceiptDocs);
+        Assert.Equal(1, preview.IssueDocs);
+        Assert.Equal(5m, preview.ReceiptQty);
+        Assert.Equal(2m, preview.IssueQty);
+        Assert.Equal(500m, preview.PurchaseAmount);
+        Assert.Equal(ReportUi.IssueQty, "사용수량");
+        Assert.Equal(ReportUi.Period, "기간");
+    }
+
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

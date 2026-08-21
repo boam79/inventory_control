@@ -9,7 +9,9 @@ public sealed record DashboardKpi(
     int ExpiringLots,
     decimal MonthPurchaseAmount,
     decimal MonthIssueQty,
-    decimal MonthDisposalQty);
+    decimal MonthDisposalQty,
+    int TodayReceiptDocs,
+    int TodayIssueDocs);
 
 public static class DashboardMetrics
 {
@@ -36,7 +38,12 @@ public static class DashboardMetrics
             .Select(l => l.Quantity)
             .AsEnumerable()
             .Sum(q => Math.Abs(q));
-        return new DashboardKpi(active, reorder, outOfStock, expiring, purchase, issue, disposal);
+        var todayReceipts = db.Documents.Count(d =>
+            d.Type == DocumentType.Receipt && !d.IsCancelled && d.DocumentDate.Date == today);
+        var todayIssues = db.Documents.Count(d =>
+            d.Type == DocumentType.Issue && !d.IsCancelled && d.DocumentDate.Date == today);
+        return new DashboardKpi(
+            active, reorder, outOfStock, expiring, purchase, issue, disposal, todayReceipts, todayIssues);
     }
 
     public static IReadOnlyList<(int Month, decimal Qty)> MonthlyIssueBars(InventoryDbContext db, int year) =>

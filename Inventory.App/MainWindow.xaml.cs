@@ -1,5 +1,6 @@
 ﻿using Inventory.Core;
 using Inventory.Infrastructure;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,6 +11,9 @@ namespace Inventory.App;
 public partial class MainWindow : Window
 {
     private string? _seedNote;
+
+    private readonly HashSet<string> _collapsedGroups = ["trace", "analyze", "admin"];
+    private string _selectedMenu = "dashboard";
 
     public MainWindow()
     {
@@ -32,22 +36,47 @@ public partial class MainWindow : Window
 
     private void BuildMenu()
     {
-        (string Tag, string Title)[] items =
-        [
-            ("dashboard", "대시보드"),
-            ("receive", "입고 등록"),
-            ("issue", "사용 등록"),
-            ("stock", "재고현황"),
-            ("ledger", "거래내역"),
-            ("lots", "LOT·유효기간"),
-            ("reorder", "발주 필요 품목"),
-            ("stats", "통계·보고서"),
-            ("close", "월 마감"),
-            ("masters", "기준정보"),
-            ("users", "사용자·권한"),
-            ("backup", "백업·복원"),
-            ("settings", "환경설정")
-        ];
+        MenuList.Items.Clear();
+        AddGroup("home", "홈·현황", ("dashboard", "대시보드"), ("stock", "재고현황"), ("reorder", "발주 필요 품목"));
+        AddGroup("ops", "일상 입출고", ("receive", "입고 등록"), ("issue", "사용 등록"));
+        AddGroup("trace", "추적", ("ledger", "거래내역"), ("lots", "LOT·유효기간"));
+        AddGroup("analyze", "분석·마감", ("stats", "통계·보고서"), ("close", "월 마감"));
+        AddGroup("admin", "관리", ("masters", "기준정보"), ("users", "사용자·권한"), ("backup", "백업·복원"), ("settings", "환경설정"));
+        SelectMenuItem(_selectedMenu);
+    }
+
+    private void AddGroup(string id, string title, params (string Tag, string Title)[] items)
+    {
+        var expanded = !_collapsedGroups.Contains(id);
+        var header = new ListBoxItem
+        {
+            Tag = "group:" + id,
+            Content = (expanded ? "▾  " : "▸  ") + title,
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(90, 104, 118)),
+            Padding = new Thickness(6, 10, 6, 4)
+        };
+        header.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (_collapsedGroups.Contains(id))
+            {
+                _collapsedGroups.Remove(id);
+            }
+            else
+            {
+                _collapsedGroups.Add(id);
+            }
+
+            e.Handled = true;
+            BuildMenu();
+        };
+        MenuList.Items.Add(header);
+        if (!expanded)
+        {
+            return;
+        }
+
         foreach (var item in items)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
@@ -59,6 +88,37 @@ public partial class MainWindow : Window
                 FontSize = 13
             });
             MenuList.Items.Add(new ListBoxItem { Tag = item.Tag, Content = row });
+        }
+    }
+
+    public void OpenMenu(string tag)
+    {
+        _selectedMenu = tag;
+        if (tag is "ledger" or "lots")
+        {
+            _collapsedGroups.Remove("trace");
+        }
+        else if (tag is "stats" or "close")
+        {
+            _collapsedGroups.Remove("analyze");
+        }
+        else if (tag is "masters" or "users" or "backup" or "settings")
+        {
+            _collapsedGroups.Remove("admin");
+        }
+
+        BuildMenu();
+    }
+
+    private void SelectMenuItem(string tag)
+    {
+        foreach (var obj in MenuList.Items)
+        {
+            if (obj is ListBoxItem item && item.Tag as string == tag)
+            {
+                MenuList.SelectedItem = item;
+                return;
+            }
         }
     }
 
@@ -113,7 +173,7 @@ public partial class MainWindow : Window
         }
 
         TryAutoSeedIfEmpty();
-        MenuList.SelectedIndex = 0;
+        OpenMenu("dashboard");
 
         try
         {
@@ -181,11 +241,7 @@ public partial class MainWindow : Window
         }
     }
 
-    public void ShowDashboard()
-    {
-        MenuList.SelectedIndex = -1;
-        MenuList.SelectedIndex = 0;
-    }
+    public void ShowDashboard() => OpenMenu("dashboard");
 
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
@@ -233,6 +289,12 @@ public partial class MainWindow : Window
         }
 
         var tag = item.Tag as string ?? string.Empty;
+        if (tag.StartsWith("group:", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _selectedMenu = tag;
         MainContent.Content = tag switch
         {
             "dashboard" => new Views.DashboardView(),

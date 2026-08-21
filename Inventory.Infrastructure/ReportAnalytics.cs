@@ -26,6 +26,25 @@ public sealed record ReportRow(
     decimal ReceiptQty,
     decimal PurchaseAmount);
 
+public sealed record MonthClosePreview(
+    bool IsClosed,
+    int ReceiptDocs,
+    int IssueDocs,
+    decimal ReceiptQty,
+    decimal IssueQty,
+    decimal PurchaseAmount,
+    int UnsetOpenings,
+    int NegativeLots);
+
+public static class ReportUi
+{
+    public const string Period = "기간";
+    public const string Dimension = "구분";
+    public const string IssueQty = "사용수량";
+    public const string ReceiptQty = "입고수량";
+    public const string PurchaseAmount = "구매금액";
+}
+
 public static class ReportAnalytics
 {
     public static (DateTime Start, DateTime EndExclusive) ResolveRange(
@@ -129,6 +148,41 @@ public static class ReportAnalytics
             .OrderBy(g => g.Key)
             .Select(g => new ReportRow(label, g.Key, g.Value.Issue, g.Value.Receipt, g.Value.Purchase))
             .ToList();
+    }
+
+    public static MonthClosePreview PreviewMonth(InventoryDbContext db, int year, int month)
+    {
+        var start = new DateTime(year, month, 1);
+        var end = start.AddMonths(1);
+        var docs = db.Documents
+            .Where(d => !d.IsCancelled && d.DocumentDate >= start && d.DocumentDate < end)
+            .Select(d => new { d.Id, d.Type })
+            .ToList();
+        var receipts = docs.Where(d => d.Type == DocumentType.Receipt).ToList();
+        var issues = docs.Where(d => d.Type == DocumentType.Issue).ToList();
+        var receiptIds = receipts.Select(d => d.Id).ToList();
+        var issueIds = issues.Select(d => d.Id).ToList();
+        var receiptQty = receiptIds.Count == 0
+            ? 0m
+            : db.StockLines.Where(l => receiptIds.Contains(l.DocumentId)).Sum(l => (decimal?)l.Quantity) ?? 0m;
+        var issueQty = issueIds.Count == 0
+            ? 0m
+            : db.StockLines.Where(l => issueIds.Contains(l.DocumentId)).Sum(l => (decimal?)l.Quantity) ?? 0m;
+        var purchase = receiptIds.Count == 0
+            ? 0m
+            : db.StockLines.Where(l => receiptIds.Contains(l.DocumentId)).Sum(l => (decimal?)l.Amount) ?? 0m;
+        var closed = db.MonthCloses.Any(c => c.Year == year && c.Month == month && c.IsClosed);
+        var unset = db.Items.Count(i => i.IsActive && i.OpeningStatus == OpeningStatus.Unset);
+        var negative = db.Lots.Count(l => l.Quantity < 0);
+        return new MonthClosePreview(
+            closed,
+            receipts.Count,
+            issues.Count,
+            receiptQty,
+            issueQty,
+            purchase,
+            unset,
+            negative);
     }
 
     private static (DateTime Start, DateTime EndExclusive) QuarterRange(DateTime day)
