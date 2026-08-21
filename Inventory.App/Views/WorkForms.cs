@@ -680,9 +680,9 @@ public sealed class StatsView : WorkspaceView
             var rows = current.OrderByDescending(r => r.IssueQty).Select(r => new
             {
                 구분 = r.Dimension,
-                사용 = r.IssueQty,
-                입고 = r.ReceiptQty,
-                구매금액 = r.PurchaseAmount
+                사용 = r.IssueQty.ToString("N3"),
+                입고 = r.ReceiptQty.ToString("N3"),
+                구매금액 = r.PurchaseAmount.ToString("N0") + "원"
             }).ToList();
             gridHost.Children.Clear();
             gridHost.Children.Add(TableGrid(rows, ("구분", "구분"), ("사용", "사용"), ("입고", "입고"), ("구매금액", "구매금액")));
