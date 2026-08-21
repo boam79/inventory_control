@@ -676,14 +676,8 @@ public sealed class StatsView : WorkspaceView
             var baseAnchor = anchor.SelectedDate ?? DateTime.Today;
             var periodsBack = trend.IsChecked == true && period != ReportPeriodKind.Custom ? 6 : 1;
             using var db = AppHost.OpenDb();
-            var rows = new List<ReportRow>();
-            for (var i = periodsBack - 1; i >= 0; i--)
-            {
-                var stepped = ReportAnalytics.StepBack(period, baseAnchor, i);
-                rows.AddRange(ReportAnalytics.Query(db, period, stepped, dim, customStart.SelectedDate, customEnd.SelectedDate));
-            }
-
-            current = rows;
+            current = ReportAnalytics.QueryTrend(
+                db, period, baseAnchor, dim, periodsBack, customStart.SelectedDate, customEnd.SelectedDate);
             summary.Text = current.Count == 0
                 ? "해당 기간 집계가 없습니다."
                 : $"총 {current.Count:N0}건 · 사용 {current.Sum(r => r.IssueQty):N3} · 입고 {current.Sum(r => r.ReceiptQty):N3} · 구매 {current.Sum(r => r.PurchaseAmount):N0}원";

@@ -73,15 +73,25 @@ public static class DashboardMetrics
             active, reorder, outOfStock, expiring, purchase, issue, disposal, todayReceipts, todayIssues);
     }
 
-    public static IReadOnlyList<(int Month, decimal Qty)> MonthlyIssueBars(InventoryDbContext db, int year) =>
-        Enumerable.Range(1, 12)
-            .Select(month => (Month: month, Qty: db.Documents.AsNoTracking()
-                .Where(d => d.Type == DocumentType.Issue && !d.IsCancelled
-                            && d.DocumentDate.Year == year && d.DocumentDate.Month == month)
-                .SelectMany(d => d.Lines)
-                .Sum(l => (decimal?)l.Quantity) ?? 0m))
+    public static IReadOnlyList<(int Month, decimal Qty)> MonthlyIssueBars(InventoryDbContext db, int year)
+    {
+        var start = new DateTime(year, 1, 1);
+        var end = start.AddYears(1);
+        // Single grouped query for the whole year instead of one query per calendar month.
+        var byMonth = db.Documents.AsNoTracking()
+            .Where(d => d.Type == DocumentType.Issue && !d.IsCancelled
+                        && d.DocumentDate >= start && d.DocumentDate < end)
+            .SelectMany(d => d.Lines, (d, l) => new { d.DocumentDate.Month, l.Quantity })
+            .GroupBy(x => x.Month)
+            .Select(g => new { Month = g.Key, Qty = g.Sum(x => x.Quantity) })
+            .ToList()
+            .ToDictionary(x => x.Month, x => x.Qty);
+
+        return Enumerable.Range(1, 12)
+            .Select(month => (Month: month, Qty: byMonth.GetValueOrDefault(month)))
             .Where(row => row.Qty > 0)
             .ToList();
+    }
 
     public static IReadOnlyList<MonthlyQty> TrailingMonthlyIssues(
         InventoryDbContext db, DateTime today, int months = 13, string? itemCode = null)

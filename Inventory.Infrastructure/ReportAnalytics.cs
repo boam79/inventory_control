@@ -99,52 +99,121 @@ public static class ReportAnalytics
             ? $"{start:yyyy-MM-dd}~{end.AddDays(-1):yyyy-MM-dd}"
             : PeriodLabel(kind, start);
 
-        var docs = db.Documents
-            .Where(d => !d.IsCancelled && d.DocumentDate >= start && d.DocumentDate < end)
-            .Select(d => new { d.Id, d.Type, d.DepartmentId, d.SupplierId })
-            .ToList();
-        if (docs.Count == 0)
+        var lines = LoadLines(db, start, end);
+        if (lines.Count == 0)
         {
             return [];
         }
 
-        var docIds = docs.Select(d => d.Id).ToList();
-        var lines = db.StockLines
-            .Where(l => docIds.Contains(l.DocumentId))
-            .Select(l => new { l.DocumentId, l.ItemId, l.Quantity, l.Amount })
-            .ToList();
-        var itemIds = lines.Select(l => l.ItemId).Distinct().ToList();
-        var items = db.Items.Where(i => itemIds.Contains(i.Id)).ToDictionary(i => i.Id);
-        var departments = db.Departments.ToDictionary(d => d.Id, d => d.Name);
-        var suppliers = db.Suppliers.ToDictionary(s => s.Id, s => s.Name);
-        var docMap = docs.ToDictionary(d => d.Id);
+        var departments = db.Departments.AsNoTracking().ToDictionary(d => d.Id, d => d.Name);
+        var suppliers = db.Suppliers.AsNoTracking().ToDictionary(s => s.Id, s => s.Name);
+        return Aggregate(lines, label, dimension, departments, suppliers);
+    }
 
+    /// <summary>
+    /// Same aggregation as <see cref="Query"/> but for the "recent N periods" trend view: loads the
+    /// whole span covering all periods in a single query, then buckets in memory, instead of issuing
+    /// one round trip (plus one items/departments/suppliers reload) per period.
+    /// </summary>
+    public static IReadOnlyList<ReportRow> QueryTrend(
+        InventoryDbContext db,
+        ReportPeriodKind kind,
+        DateTime anchor,
+        ReportDimension dimension,
+        int periodsBack,
+        DateTime? customStart = null,
+        DateTime? customEnd = null)
+    {
+        if (periodsBack <= 1 || kind == ReportPeriodKind.Custom)
+        {
+            return Query(db, kind, anchor, dimension, customStart, customEnd);
+        }
+
+        var earliestAnchor = StepBack(kind, anchor, periodsBack - 1);
+        var (overallStart, _) = ResolveRange(kind, earliestAnchor);
+        var (_, overallEnd) = ResolveRange(kind, anchor);
+
+        var lines = LoadLines(db, overallStart, overallEnd);
+        if (lines.Count == 0)
+        {
+            return [];
+        }
+
+        var departments = db.Departments.AsNoTracking().ToDictionary(d => d.Id, d => d.Name);
+        var suppliers = db.Suppliers.AsNoTracking().ToDictionary(s => s.Id, s => s.Name);
+
+        var rows = new List<ReportRow>();
+        for (var i = periodsBack - 1; i >= 0; i--)
+        {
+            var stepped = StepBack(kind, anchor, i);
+            var (start, end) = ResolveRange(kind, stepped);
+            var label = PeriodLabel(kind, start);
+            var bucket = lines.Where(l => l.DocumentDate >= start && l.DocumentDate < end);
+            rows.AddRange(Aggregate(bucket, label, dimension, departments, suppliers));
+        }
+
+        return rows;
+    }
+
+    private sealed record RawLine(
+        DocumentType Type,
+        DateTime DocumentDate,
+        int? DepartmentId,
+        int? SupplierId,
+        string Category,
+        string ItemCode,
+        string ItemName,
+        decimal Quantity,
+        decimal Amount);
+
+    /// <summary>
+    /// Loads issue/receipt lines for a date range as a single SQL join (StockLines -> Documents -> Items)
+    /// instead of fetching document ids then re-querying lines/items with `Contains(...)` id lists, which
+    /// both adds round trips and risks hitting SQLite's bound-parameter limit once item/document counts grow.
+    /// </summary>
+    private static List<RawLine> LoadLines(InventoryDbContext db, DateTime start, DateTime end) =>
+        db.StockLines.AsNoTracking()
+            .Where(l => !l.Document.IsCancelled && l.Document.DocumentDate >= start && l.Document.DocumentDate < end)
+            .Join(db.Items.AsNoTracking(), l => l.ItemId, i => i.Id, (l, i) => new RawLine(
+                l.Document.Type,
+                l.Document.DocumentDate,
+                l.Document.DepartmentId,
+                l.Document.SupplierId,
+                i.Category,
+                i.Code,
+                i.Name,
+                l.Quantity,
+                l.Amount))
+            .ToList();
+
+    private static List<ReportRow> Aggregate(
+        IEnumerable<RawLine> lines,
+        string label,
+        ReportDimension dimension,
+        IReadOnlyDictionary<int, string> departments,
+        IReadOnlyDictionary<int, string> suppliers)
+    {
         var groups = new Dictionary<string, (decimal Issue, decimal Receipt, decimal Purchase)>(StringComparer.Ordinal);
         foreach (var line in lines)
         {
-            if (!docMap.TryGetValue(line.DocumentId, out var doc) || !items.TryGetValue(line.ItemId, out var item))
-            {
-                continue;
-            }
-
             var key = dimension switch
             {
-                ReportDimension.Category => string.IsNullOrWhiteSpace(item.Category) ? "(분류 없음)" : item.Category,
-                ReportDimension.Department => doc.DepartmentId is { } dep && departments.TryGetValue(dep, out var depName)
+                ReportDimension.Category => string.IsNullOrWhiteSpace(line.Category) ? "(분류 없음)" : line.Category,
+                ReportDimension.Department => line.DepartmentId is { } dep && departments.TryGetValue(dep, out var depName)
                     ? depName
                     : "(부서 없음)",
-                ReportDimension.Supplier => doc.SupplierId is { } sup && suppliers.TryGetValue(sup, out var supName)
+                ReportDimension.Supplier => line.SupplierId is { } sup && suppliers.TryGetValue(sup, out var supName)
                     ? supName
                     : "(공급업체 없음)",
-                _ => $"{item.Code} {item.Name}"
+                _ => $"{line.ItemCode} {line.ItemName}"
             };
 
             groups.TryGetValue(key, out var acc);
-            if (doc.Type == DocumentType.Issue)
+            if (line.Type == DocumentType.Issue)
             {
                 acc.Issue += line.Quantity;
             }
-            else if (doc.Type == DocumentType.Receipt)
+            else if (line.Type == DocumentType.Receipt)
             {
                 acc.Receipt += line.Quantity;
                 acc.Purchase += line.Amount;
@@ -163,30 +232,32 @@ public static class ReportAnalytics
     {
         var start = new DateTime(year, month, 1);
         var end = start.AddMonths(1);
-        var docs = db.Documents
+
+        // One grouped query for document counts and one for line totals, instead of loading the
+        // month's document ids into memory and re-querying StockLines three times with `Contains(...)`.
+        var docCounts = db.Documents.AsNoTracking()
             .Where(d => !d.IsCancelled && d.DocumentDate >= start && d.DocumentDate < end)
-            .Select(d => new { d.Id, d.Type })
-            .ToList();
-        var receipts = docs.Where(d => d.Type == DocumentType.Receipt).ToList();
-        var issues = docs.Where(d => d.Type == DocumentType.Issue).ToList();
-        var receiptIds = receipts.Select(d => d.Id).ToList();
-        var issueIds = issues.Select(d => d.Id).ToList();
-        var receiptQty = receiptIds.Count == 0
-            ? 0m
-            : db.StockLines.Where(l => receiptIds.Contains(l.DocumentId)).Sum(l => (decimal?)l.Quantity) ?? 0m;
-        var issueQty = issueIds.Count == 0
-            ? 0m
-            : db.StockLines.Where(l => issueIds.Contains(l.DocumentId)).Sum(l => (decimal?)l.Quantity) ?? 0m;
-        var purchase = receiptIds.Count == 0
-            ? 0m
-            : db.StockLines.Where(l => receiptIds.Contains(l.DocumentId)).Sum(l => (decimal?)l.Amount) ?? 0m;
-        var closed = db.MonthCloses.Any(c => c.Year == year && c.Month == month && c.IsClosed);
-        var unset = db.Items.Count(i => i.IsActive && i.OpeningStatus == OpeningStatus.Unset);
-        var negative = db.Lots.Count(l => l.Quantity < 0);
+            .GroupBy(d => d.Type)
+            .Select(g => new { Type = g.Key, Count = g.Count() })
+            .ToList()
+            .ToDictionary(x => x.Type, x => x.Count);
+
+        var lineTotals = db.StockLines.AsNoTracking()
+            .Where(l => !l.Document.IsCancelled && l.Document.DocumentDate >= start && l.Document.DocumentDate < end)
+            .GroupBy(l => l.Document.Type)
+            .Select(g => new { Type = g.Key, Qty = g.Sum(x => x.Quantity), Amount = g.Sum(x => x.Amount) })
+            .ToList()
+            .ToDictionary(x => x.Type, x => (x.Qty, x.Amount));
+
+        var (receiptQty, purchase) = lineTotals.GetValueOrDefault(DocumentType.Receipt);
+        var (issueQty, _) = lineTotals.GetValueOrDefault(DocumentType.Issue);
+        var closed = db.MonthCloses.AsNoTracking().Any(c => c.Year == year && c.Month == month && c.IsClosed);
+        var unset = db.Items.AsNoTracking().Count(i => i.IsActive && i.OpeningStatus == OpeningStatus.Unset);
+        var negative = db.Lots.AsNoTracking().Count(l => l.Quantity < 0);
         return new MonthClosePreview(
             closed,
-            receipts.Count,
-            issues.Count,
+            docCounts.GetValueOrDefault(DocumentType.Receipt),
+            docCounts.GetValueOrDefault(DocumentType.Issue),
             receiptQty,
             issueQty,
             purchase,

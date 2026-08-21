@@ -41,6 +41,12 @@ public static class InventoryDatabase
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Items_Name ON Items(Name);");
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Lots_ExpiryDate ON Lots(ExpiryDate);");
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Documents_TypeDate ON Documents(Type, IsCancelled, DocumentDate);");
+        // ReportAnalytics.Query/PreviewMonth filter by date range without a Type predicate, so the
+        // (Type, IsCancelled, DocumentDate) index above can't be used efficiently for those queries.
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Documents_Cancelled_Date ON Documents(IsCancelled, DocumentDate);");
+        // StockLines has no index on ItemId; needed for the ReportAnalytics item join and for
+        // per-item existence checks (e.g. DeleteItem) once a year of transactions accumulates.
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_StockLines_ItemId ON StockLines(ItemId);");
     }
 
     public static void Initialize(string dbPath)
