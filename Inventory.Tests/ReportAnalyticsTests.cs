@@ -52,6 +52,41 @@ public sealed class ReportAnalyticsTests : IDisposable
     }
 
     [Fact]
+    public void Department_dimension_splits_issues_by_department_across_months()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("D001", "장갑", "소독", "개", "개", 10);
+        svc.SaveOpeningDraft("D001", "OPEN", 500, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("D001");
+        var er = svc.CreateDepartment("외래");
+        var jinche = svc.CreateDepartment("시술실");
+        svc.Issue(new DateTime(2026, 6, 5), er.Id, [new IssueLineRequest { ItemCode = "D001", Quantity = 5, LotNumber = "OPEN" }]);
+        svc.Issue(new DateTime(2026, 7, 5), jinche.Id, [new IssueLineRequest { ItemCode = "D001", Quantity = 8, LotNumber = "OPEN" }]);
+
+        var june = ReportAnalytics.Query(db, ReportPeriodKind.Month, new DateTime(2026, 6, 15), ReportDimension.Department);
+        Assert.Single(june);
+        Assert.Equal("외래", june.Single().Dimension);
+        Assert.Equal(5m, june.Single().IssueQty);
+
+        var july = ReportAnalytics.Query(db, ReportPeriodKind.Month, new DateTime(2026, 7, 15), ReportDimension.Department);
+        Assert.Single(july);
+        Assert.Equal("시술실", july.Single().Dimension);
+        Assert.Equal(8m, july.Single().IssueQty);
+    }
+
+    [Fact]
+    public void StepBack_moves_anchor_by_whole_periods()
+    {
+        var anchor = new DateTime(2026, 7, 15);
+        Assert.Equal(new DateTime(2026, 6, 15), ReportAnalytics.StepBack(ReportPeriodKind.Month, anchor, 1));
+        Assert.Equal(new DateTime(2026, 1, 15), ReportAnalytics.StepBack(ReportPeriodKind.Quarter, anchor, 2));
+        Assert.Equal(new DateTime(2024, 7, 15), ReportAnalytics.StepBack(ReportPeriodKind.Year, anchor, 2));
+        Assert.Equal(new DateTime(2026, 7, 10), ReportAnalytics.StepBack(ReportPeriodKind.Day, anchor, 5));
+        Assert.Equal(anchor, ReportAnalytics.StepBack(ReportPeriodKind.Custom, anchor, 3));
+    }
+
+    [Fact]
     public void Month_close_preview_counts_receipts_and_issues()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);

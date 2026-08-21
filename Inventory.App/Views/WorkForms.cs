@@ -646,14 +646,15 @@ public sealed class StatsView : WorkspaceView
         var customRow = new WrapPanel { Visibility = Visibility.Collapsed };
         customRow.Children.Add(Field("시작", customStart));
         customRow.Children.Add(Field("종료", customEnd));
+        var trend = new CheckBox
+        {
+            Content = "최근 6기간 추이로 보기 (월별·부서별 비교)",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
         IReadOnlyList<ReportRow> current = [];
         var gridHost = new StackPanel();
         var summary = new TextBlock { Margin = new Thickness(0, 0, 0, 8), FontWeight = FontWeights.SemiBold };
-
-        kind.SelectionChanged += (_, _) =>
-        {
-            customRow.Visibility = kind.SelectedIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
-        };
 
         void Reload()
         {
@@ -672,25 +673,57 @@ public sealed class StatsView : WorkspaceView
                 3 => ReportDimension.Supplier,
                 _ => ReportDimension.Category
             };
+            var baseAnchor = anchor.SelectedDate ?? DateTime.Today;
+            var periodsBack = trend.IsChecked == true && period != ReportPeriodKind.Custom ? 6 : 1;
             using var db = AppHost.OpenDb();
-            current = ReportAnalytics.Query(db, period, anchor.SelectedDate ?? DateTime.Today, dim, customStart.SelectedDate, customEnd.SelectedDate);
+            var rows = new List<ReportRow>();
+            for (var i = periodsBack - 1; i >= 0; i--)
+            {
+                var stepped = ReportAnalytics.StepBack(period, baseAnchor, i);
+                rows.AddRange(ReportAnalytics.Query(db, period, stepped, dim, customStart.SelectedDate, customEnd.SelectedDate));
+            }
+
+            current = rows;
             summary.Text = current.Count == 0
                 ? "해당 기간 집계가 없습니다."
                 : $"총 {current.Count:N0}건 · 사용 {current.Sum(r => r.IssueQty):N3} · 입고 {current.Sum(r => r.ReceiptQty):N3} · 구매 {current.Sum(r => r.PurchaseAmount):N0}원";
-            var rows = current.OrderByDescending(r => r.IssueQty).Select(r => new
-            {
-                구분 = r.Dimension,
-                사용 = r.IssueQty.ToString("N3"),
-                입고 = r.ReceiptQty.ToString("N3"),
-                구매금액 = r.PurchaseAmount.ToString("N0") + "원"
-            }).ToList();
+            var display = current
+                .OrderBy(r => r.PeriodLabel, StringComparer.Ordinal)
+                .ThenByDescending(r => r.IssueQty)
+                .Select(r => new
+                {
+                    기간 = r.PeriodLabel,
+                    구분 = r.Dimension,
+                    사용 = r.IssueQty.ToString("N3"),
+                    입고 = r.ReceiptQty.ToString("N3"),
+                    구매금액 = r.PurchaseAmount.ToString("N0") + "원"
+                }).ToList();
             gridHost.Children.Clear();
-            gridHost.Children.Add(TableGrid(rows, ("구분", "구분"), ("사용", "사용"), ("입고", "입고"), ("구매금액", "구매금액")));
+            gridHost.Children.Add(TableGrid(display, ("기간", "기간"), ("구분", "구분"), ("사용", "사용"), ("입고", "입고"), ("구매금액", "구매금액")));
         }
+
+        kind.SelectionChanged += (_, _) =>
+        {
+            customRow.Visibility = kind.SelectedIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
+            trend.IsEnabled = kind.SelectedIndex != 4;
+            if (kind.SelectedIndex == 4)
+            {
+                trend.IsChecked = false;
+            }
+
+            Reload();
+        };
+        dimension.SelectionChanged += (_, _) => Reload();
+        anchor.SelectedDateChanged += (_, _) => Reload();
+        customStart.SelectedDateChanged += (_, _) => Reload();
+        customEnd.SelectedDateChanged += (_, _) => Reload();
+        trend.Checked += (_, _) => Reload();
+        trend.Unchecked += (_, _) => Reload();
 
         var filters = new StackPanel();
         filters.Children.Add(FormRow(Field("기간", kind), Field("기준일", anchor), Field("집계", dimension)));
         filters.Children.Add(customRow);
+        filters.Children.Add(trend);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
         actions.Children.Add(Primary("적용", (_, _) => Reload()));
         actions.Children.Add(Btn("Excel 내보내기", (_, _) =>

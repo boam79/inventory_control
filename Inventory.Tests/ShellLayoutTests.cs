@@ -116,6 +116,22 @@ public class ShellLayoutTests
         Assert.Contains("class LotRow", forms, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Stats_filters_apply_immediately_and_support_period_trend()
+    {
+        // User report: changing 기간/집계 in 통계·보고서 looked like it "did not filter" because
+        // the table only refreshed on the 적용 button click, and the table never showed which
+        // period a row belonged to, so 월별/부서별 changes were invisible until 적용 was pressed.
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        Assert.Contains("dimension.SelectionChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
+        Assert.Contains("anchor.SelectedDateChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
+        Assert.Contains("최근 6기간 추이로 보기", forms, StringComparison.Ordinal);
+        Assert.Contains("(\"기간\", \"기간\")", forms, StringComparison.Ordinal);
+
+        var analytics = ReadRepoFile("Inventory.Infrastructure", "ReportAnalytics.cs");
+        Assert.Contains("public static DateTime StepBack(", analytics, StringComparison.Ordinal);
+    }
+
     private static string ReadRepoFile(params string[] parts)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -67,6 +67,15 @@ public static class ReportAnalytics
         };
     }
 
+    public static DateTime StepBack(ReportPeriodKind kind, DateTime anchor, int periodsBack) => kind switch
+    {
+        ReportPeriodKind.Day => anchor.AddDays(-periodsBack),
+        ReportPeriodKind.Quarter => anchor.AddMonths(-3 * periodsBack),
+        ReportPeriodKind.Year => anchor.AddYears(-periodsBack),
+        ReportPeriodKind.Custom => anchor,
+        _ => anchor.AddMonths(-periodsBack)
+    };
+
     public static string PeriodLabel(ReportPeriodKind kind, DateTime start) => kind switch
     {
         ReportPeriodKind.Day => start.ToString("yyyy-MM-dd"),
