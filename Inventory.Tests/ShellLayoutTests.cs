@@ -63,6 +63,9 @@ public class ShellLayoutTests
         Assert.Contains("예측 수량", workspace, StringComparison.Ordinal);
         Assert.Contains("겹치지 않습니다", workspace, StringComparison.Ordinal);
         Assert.Contains("ReplaceSample", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("품목은 다시 만들지 않습니다", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("그래도 거래를 추가할까요?", workspace, StringComparison.Ordinal);
+        Assert.Contains("기존 품목·입고·출고를 모두 삭제한 뒤", workspace, StringComparison.Ordinal);
         Assert.Contains("LineSeries<double>", workspace, StringComparison.Ordinal);
         Assert.Contains("GeometrySize = 6", workspace, StringComparison.Ordinal);
         Assert.DoesNotContain("GeometrySize = 0", workspace, StringComparison.Ordinal);

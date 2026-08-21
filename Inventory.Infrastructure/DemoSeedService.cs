@@ -102,7 +102,17 @@ public static class DemoSeedService
         db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = ON");
         db.SaveChanges();
         db.ChangeTracker.Clear();
-        return Generate(db, today, force: true, actor: actor, itemCount: itemCount);
+        var result = Generate(db, today, force: true, actor: actor, itemCount: itemCount);
+        if (!result.Applied)
+        {
+            return result;
+        }
+
+        return result with
+        {
+            Message =
+                $"기존 품목·입고·출고를 모두 지우고 테스트 데이터 품목 {result.ItemCount}개, 거래 {result.DocumentCount}건을 새로 만들었습니다."
+        };
     }
 
     public static DemoSeedResult Generate(

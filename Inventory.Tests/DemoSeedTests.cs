@@ -164,6 +164,9 @@ public sealed class DemoSeedTests : IDisposable
         Assert.True(shrunk.Applied, shrunk.Message);
         Assert.Equal(25, db.Items.Count());
         Assert.Equal(25, shrunk.ItemCount);
+        Assert.Contains("지우고", shrunk.Message);
+        Assert.Contains("새로 만들", shrunk.Message);
+        Assert.DoesNotContain("삭제하지 않았습니다", shrunk.Message);
         Assert.All(db.Items.Select(i => i.Code), code => Assert.Matches("^P\\d{5}$", code));
     }
 

@@ -277,7 +277,7 @@ public sealed class DashboardView : WorkspaceView
             var replaceButton = Btn("샘플 데이터를 다양하게 다시 만들기", (_, _) =>
             {
                 if (MessageBox.Show(
-                        "기존 입고·출고 거래와 품목을 지우고, 새 품목마다 수량·날짜·계절이 다른 테스트 데이터를 다시 넣습니다.\n운영 의원 데이터면 '아니오'를 누르세요.",
+                        $"기존 품목·입고·출고를 모두 삭제한 뒤 품목 {DemoSeedService.DefaultItemCount:N0}개를 새로 만듭니다.\n운영 의원 데이터면 '아니오'를 누르세요.",
                         ProductInfo.DisplayName,
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -305,7 +305,7 @@ public sealed class DashboardView : WorkspaceView
             replaceButton.Padding = new Thickness(14, 8, 14, 8);
             replaceButton.HorizontalAlignment = HorizontalAlignment.Left;
             panel.Children.Add(replaceButton);
-            panel.Children.Add(Note("테스트 데이터가 너무 비슷하면 이 버튼으로 다시 만듭니다. 기존 품목·입고·출고는 모두 삭제되고 지정한 개수만큼 새로 만들어집니다."));
+            panel.Children.Add(Note($"테스트 데이터가 너무 비슷하면 이 버튼으로 다시 만듭니다. 기존 품목·입고·출고는 모두 삭제되고 품목 {DemoSeedService.DefaultItemCount:N0}개가 새로 만들어집니다."));
         }
         else
         {
@@ -846,11 +846,11 @@ public sealed class SettingsView : WorkspaceView
         }));
         if (AppSession.Current?.Role == UserRole.Administrator)
         {
-            panel.Children.Add(Note("테스트 데이터는 개발·예측 확인용입니다. 운영 의원 DB에서는 만들지 마세요. 기존 거래를 지우지는 않습니다. 품목 1,000개가 이미 있으면 중복 생성하지 않습니다."));
-            panel.Children.Add(Btn("테스트 데이터 생성 (품목 1,000)", (_, _) =>
+            panel.Children.Add(Note($"테스트 데이터는 개발·예측 확인용입니다. 운영 의원 DB에서는 만들지 마세요. 다시 만들면 기존 품목·입고·출고를 모두 지우고 품목 {DemoSeedService.DefaultItemCount:N0}개로 교체합니다."));
+            panel.Children.Add(Btn($"테스트 데이터 다시 만들기 (품목 {DemoSeedService.DefaultItemCount:N0})", (_, _) =>
             {
                 if (MessageBox.Show(
-                        "품목 1,000개와 1년치 계절 거래를 추가합니다.\n운영 데이터면 '아니오'를 누르세요.",
+                        $"기존 품목·입고·출고를 모두 삭제한 뒤 품목 {DemoSeedService.DefaultItemCount:N0}개와 1년치 계절 거래를 새로 만듭니다.\n운영 데이터면 '아니오'를 누르세요.",
                         ProductInfo.DisplayName,
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -859,38 +859,7 @@ public sealed class SettingsView : WorkspaceView
                 }
 
                 status.Text = AppHost.Run((inner, _) =>
-                {
-                    if (inner.Items.Count() >= DemoSeedService.DefaultItemCount)
-                    {
-                        var dup = MessageBox.Show(
-                            $"이미 품목 {inner.Items.Count()}개가 있습니다. 그래도 거래를 추가할까요? 품목은 다시 만들지 않습니다.",
-                            ProductInfo.DisplayName,
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Warning);
-                        if (dup != MessageBoxResult.Yes)
-                        {
-                            return "품목이 이미 있어 생성을 취소했습니다.";
-                        }
-                    }
-
-                    var existing = DemoSeedService.CountBusinessDocuments(inner);
-                    if (existing >= DemoSeedService.BusyThreshold)
-                    {
-                        var again = MessageBox.Show(
-                            $"이미 거래 {existing}건이 있습니다. 그래도 추가할까요? 기존 데이터는 삭제하지 않습니다.",
-                            ProductInfo.DisplayName,
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Warning);
-                        if (again != MessageBoxResult.Yes)
-                        {
-                            return "테스트 데이터 생성을 취소했습니다.";
-                        }
-
-                        return DemoSeedService.Generate(inner, DateTime.Today, force: true).Message;
-                    }
-
-                    return DemoSeedService.Generate(inner, DateTime.Today, force: false).Message;
-                });
+                    DemoSeedService.ReplaceSample(inner, DateTime.Today, AppHost.Actor).Message);
             }));
         }
 
