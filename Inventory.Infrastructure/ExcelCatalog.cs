@@ -106,7 +106,7 @@ public static class ExcelCatalog
             OpeningConfirmed = openings,
             DoubleCountWarning = doubleCount,
             Warning = doubleCount
-                ? "기초재고와 구매·사용 이력을 같이 넣으면 재고가 두 번 잡힙니다. 기초는 건너뛰고 이력만 넣었습니다."
+                ? "기초재고와 구매·출고 이력을 같이 넣으면 재고가 두 번 잡힙니다. 기초는 건너뛰고 이력만 넣었습니다."
                 : string.Empty
         };
     }
@@ -170,7 +170,7 @@ public static class ExcelCatalog
             row++;
         }
 
-        var usage = wb.AddWorksheet("사용");
+        var usage = wb.AddWorksheet("출고");
         usage.Cell(1, 1).Value = "연도";
         usage.Cell(1, 2).Value = "월";
         usage.Cell(1, 3).Value = "품목코드";
@@ -199,7 +199,7 @@ public static class ExcelCatalog
         var sheet = wb.AddWorksheet("통계보고서");
         sheet.Cell(1, 1).Value = "기간";
         sheet.Cell(1, 2).Value = "구분";
-        sheet.Cell(1, 3).Value = "사용수량";
+        sheet.Cell(1, 3).Value = "출고수량";
         sheet.Cell(1, 4).Value = "입고수량";
         sheet.Cell(1, 5).Value = "구매금액";
         var row = 2;
@@ -224,14 +224,15 @@ public static class ExcelCatalog
     {
         var lines = new List<HistoryLine>();
         var empty = 0;
-        empty += ReadSheet(wb, "구매", isReceipt: true, lines);
-        empty += ReadSheet(wb, "사용", isReceipt: false, lines);
+        empty += ReadSheet(wb, isReceipt: true, lines, "구매");
+        // "출고" is the current label; "사용" is kept so older exported/legacy files still import.
+        empty += ReadSheet(wb, isReceipt: false, lines, "출고", "사용");
         return new HistoryRows(lines, [], empty);
     }
 
-    private static int ReadSheet(XLWorkbook wb, string namePart, bool isReceipt, List<HistoryLine> lines)
+    private static int ReadSheet(XLWorkbook wb, bool isReceipt, List<HistoryLine> lines, params string[] nameParts)
     {
-        var sheet = wb.Worksheets.FirstOrDefault(ws => ws.Name.Contains(namePart) && !ws.Name.Contains("품목"));
+        var sheet = wb.Worksheets.FirstOrDefault(ws => nameParts.Any(part => ws.Name.Contains(part)) && !ws.Name.Contains("품목"));
         if (sheet is null)
         {
             return 0;
@@ -241,7 +242,7 @@ public static class ExcelCatalog
         foreach (var row in sheet.RowsUsed())
         {
             var texts = row.CellsUsed().Select(c => c.GetString().Trim()).ToList();
-            if (texts.Any(t => t is "구매일" or "사용일" or "품목코드"))
+            if (texts.Any(t => t is "구매일" or "출고일" or "사용일" or "품목코드"))
             {
                 header = row;
                 break;
@@ -263,9 +264,9 @@ public static class ExcelCatalog
             }
         }
 
-        var dateCol = FindCol(map, isReceipt ? "구매일" : "사용일", "날짜");
+        var dateCol = FindCol(map, isReceipt ? "구매일" : "출고일", "사용일", "날짜");
         var codeCol = FindCol(map, "품목코드", "코드");
-        var qtyCol = FindCol(map, isReceipt ? "구매수량" : "사용수량", "수량");
+        var qtyCol = FindCol(map, isReceipt ? "구매수량" : "출고수량", "사용수량", "수량");
         var supplierCol = FindCol(map, "공급업체", "거래처");
         if (dateCol is null || codeCol is null || qtyCol is null)
         {

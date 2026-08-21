@@ -10,7 +10,7 @@ public sealed record DemoSeedResult(
 
 public static class DemoSeedService
 {
-    public const int DefaultItemCount = 10_000;
+    public const int DefaultItemCount = 1_000;
     public const int DefaultTargetDocuments = 50_000;
     public const int BusyThreshold = 50;
     public const int LotTrackedLimit = 300;
@@ -74,12 +74,18 @@ public static class DemoSeedService
                 false,
                 existing,
                 db.Items.Count(),
-                $"거래 {existing}건이 있어 자동 시드하지 않았습니다. 기존 입고·사용은 그대로입니다.");
+                $"거래 {existing}건이 있어 자동 시드하지 않았습니다. 기존 입고·출고는 그대로입니다.");
         }
 
         return Generate(db, today, force: false, actor: actor, itemCount: itemCount);
     }
 
+    /// <summary>
+    /// Fully wipes sample items and transactions (not just transactions), then regenerates
+    /// exactly <paramref name="itemCount"/> items. Unlike <see cref="Generate"/>'s master-creation
+    /// step, which only ever adds items to reach a target, this guarantees the item count shrinks
+    /// too when a smaller <paramref name="itemCount"/> is requested (e.g. going from 10,000 to 1,000).
+    /// </summary>
     public static DemoSeedResult ReplaceSample(
         InventoryDbContext db,
         DateTime today,
@@ -92,12 +98,8 @@ public static class DemoSeedService
         db.Database.ExecuteSqlRaw("DELETE FROM Documents");
         db.Database.ExecuteSqlRaw("DELETE FROM Lots");
         db.Database.ExecuteSqlRaw("DELETE FROM MonthCloses");
+        db.Database.ExecuteSqlRaw("DELETE FROM Items");
         db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = ON");
-        foreach (var item in db.Items.ToList())
-        {
-            item.OpeningStatus = OpeningStatus.Unset;
-        }
-
         db.SaveChanges();
         db.ChangeTracker.Clear();
         return Generate(db, today, force: true, actor: actor, itemCount: itemCount);

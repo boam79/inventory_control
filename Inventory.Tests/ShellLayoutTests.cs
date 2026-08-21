@@ -57,7 +57,7 @@ public class ShellLayoutTests
     {
         var workspace = ReadRepoFile("Inventory.App", "Views", "WorkspaceViews.cs");
         Assert.Contains("품목 목록", workspace, StringComparison.Ordinal);
-        Assert.Contains("품목 사용 추이", workspace, StringComparison.Ordinal);
+        Assert.Contains("품목 출고 추이", workspace, StringComparison.Ordinal);
         Assert.Contains("nameof(ItemRow.선택)", workspace, StringComparison.Ordinal);
         Assert.Contains("ChartItemMax", workspace, StringComparison.Ordinal);
         Assert.Contains("예측 수량", workspace, StringComparison.Ordinal);
@@ -114,6 +114,15 @@ public class ShellLayoutTests
         // Already-expired lots (음수 남은일) were listed with no visual flag.
         Assert.Contains("IsExpired = days is not null && days < 0", forms, StringComparison.Ordinal);
         Assert.Contains("class LotRow", forms, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Issue_menu_is_labeled_as_dispatch_not_usage()
+    {
+        Assert.Equal("출고", ShellPages.Title("issue"));
+        Assert.Equal("출고", ShellPages.NavLabel("issue"));
+        Assert.DoesNotContain("사용 추이", ShellPages.Hint("dashboard"), StringComparison.Ordinal);
+        Assert.Contains("출고 추이", ShellPages.Hint("dashboard"), StringComparison.Ordinal);
     }
 
     [Fact]

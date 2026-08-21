@@ -213,7 +213,7 @@ public static class UpdateChecker
             {
                 return offer with
                 {
-                    Message = $"원인: 해시 파일을 읽지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 지금 버전을 유지합니다. 입고·사용은 계속하세요."
+                    Message = $"원인: 해시 파일을 읽지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 지금 버전을 유지합니다. 입고·출고는 계속하세요."
                 };
             }
         }

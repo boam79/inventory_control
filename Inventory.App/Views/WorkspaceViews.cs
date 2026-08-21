@@ -202,7 +202,7 @@ public abstract class WorkspaceView : UserControl
     protected static string DocTypeKo(DocumentType type) => type switch
     {
         DocumentType.Receipt => "입고",
-        DocumentType.Issue => "사용",
+        DocumentType.Issue => "출고",
         DocumentType.Adjustment => "조정",
         DocumentType.Opening => "초기재고",
         DocumentType.Reversal => "취소(반대)",
@@ -247,7 +247,7 @@ public sealed class DashboardView : WorkspaceView
         var panel = new StackPanel();
         if (DemoSeedService.ShouldAutoSeed(db) && AppSession.Current?.Role == UserRole.Administrator)
         {
-            var seedButton = Btn("테스트 데이터 생성 (품목 약 1만 · 1년치)", (_, _) =>
+            var seedButton = Btn("테스트 데이터 생성 (품목 1,000 · 1년치)", (_, _) =>
             {
                 Mouse.OverrideCursor = Cursors.Wait;
                 try
@@ -270,14 +270,14 @@ public sealed class DashboardView : WorkspaceView
             seedButton.MinHeight = 48;
             seedButton.HorizontalAlignment = HorizontalAlignment.Left;
             panel.Children.Add(seedButton);
-            panel.Children.Add(Note("입고·사용 거래가 없습니다. 이 버튼을 누르면 대시보드·예측용 가상 데이터가 생깁니다. 실제 거래가 있으면 자동으로 넣지 않습니다."));
+            panel.Children.Add(Note("입고·출고 거래가 없습니다. 이 버튼을 누르면 대시보드·예측용 가상 데이터가 생깁니다. 실제 거래가 있으면 자동으로 넣지 않습니다."));
         }
         else if (AppSession.Current?.Role == UserRole.Administrator)
         {
             var replaceButton = Btn("샘플 데이터를 다양하게 다시 만들기", (_, _) =>
             {
                 if (MessageBox.Show(
-                        "기존 입고·사용 거래를 지우고, 품목마다 수량·날짜·계절이 다른 테스트 데이터를 다시 넣습니다.\n운영 의원 데이터면 '아니오'를 누르세요.",
+                        "기존 입고·출고 거래와 품목을 지우고, 새 품목마다 수량·날짜·계절이 다른 테스트 데이터를 다시 넣습니다.\n운영 의원 데이터면 '아니오'를 누르세요.",
                         ProductInfo.DisplayName,
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -305,11 +305,11 @@ public sealed class DashboardView : WorkspaceView
             replaceButton.Padding = new Thickness(14, 8, 14, 8);
             replaceButton.HorizontalAlignment = HorizontalAlignment.Left;
             panel.Children.Add(replaceButton);
-            panel.Children.Add(Note("테스트 데이터가 너무 비슷하면 이 버튼으로 다시 만듭니다. 기존 입고·사용은 삭제됩니다."));
+            panel.Children.Add(Note("테스트 데이터가 너무 비슷하면 이 버튼으로 다시 만듭니다. 기존 품목·입고·출고는 모두 삭제되고 지정한 개수만큼 새로 만들어집니다."));
         }
         else
         {
-            panel.Children.Add(Note("표에서 품목을 하나 이상 선택하면 사용 추이를 봅니다. 여러 개를 고르면 함께 비교하고, 한 번에 최대 8개입니다. 예측은 참고용이며 자동 발주하지 않습니다."));
+            panel.Children.Add(Note("표에서 품목을 하나 이상 선택하면 출고 추이를 봅니다. 여러 개를 고르면 함께 비교하고, 한 번에 최대 8개입니다. 예측은 참고용이며 자동 발주하지 않습니다."));
         }
 
         var cards = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
@@ -320,7 +320,7 @@ public sealed class DashboardView : WorkspaceView
         panel.Children.Add(cards);
         panel.Children.Add(new TextBlock
         {
-            Text = $"사용 품목 {kpi.ActiveItems:N0} · 당월 구매 {kpi.MonthPurchaseAmount:N0}원 · 당월 사용 {kpi.MonthIssueQty:N3} · 당월 폐기 {kpi.MonthDisposalQty:N3}",
+            Text = $"사용 품목 {kpi.ActiveItems:N0} · 당월 구매 {kpi.MonthPurchaseAmount:N0}원 · 당월 출고 {kpi.MonthIssueQty:N3} · 당월 폐기 {kpi.MonthDisposalQty:N3}",
             Foreground = Brushes.DimGray,
             Margin = new Thickness(0, 0, 0, 8),
             TextWrapping = TextWrapping.Wrap
@@ -353,7 +353,7 @@ public sealed class DashboardView : WorkspaceView
             chartHost.Children.Clear();
             chartHost.Children.Add(new TextBlock
             {
-                Text = $"표에서 품목의 「선택」을 켜면 사용 추이가 나옵니다. 여러 개를 고르면 함께 비교합니다. 한 번에 최대 {UiLayout.ChartItemMax}개입니다.",
+                Text = $"표에서 품목의 「선택」을 켜면 출고 추이가 나옵니다. 여러 개를 고르면 함께 비교합니다. 한 번에 최대 {UiLayout.ChartItemMax}개입니다.",
                 Foreground = Brushes.DimGray,
                 TextWrapping = TextWrapping.Wrap
             });
@@ -554,7 +554,7 @@ public sealed class DashboardView : WorkspaceView
                 suppressSelect = true;
                 row.선택 = false;
                 suppressSelect = false;
-                Alert($"사용 추이는 한 번에 {UiLayout.ChartItemMax}개까지 비교합니다.");
+                Alert($"출고 추이는 한 번에 {UiLayout.ChartItemMax}개까지 비교합니다.");
                 return;
             }
 
@@ -697,7 +697,7 @@ public sealed class DashboardView : WorkspaceView
         root.Children.Add(Section("요약", panel));
         root.Children.Add(Section("검색·필터", filters));
         root.Children.Add(Section("품목 목록", listBody));
-        root.Children.Add(Section("품목 사용 추이", chartHost));
+        root.Children.Add(Section("품목 출고 추이", chartHost));
 
         Content = root;
         Reload();
@@ -846,11 +846,11 @@ public sealed class SettingsView : WorkspaceView
         }));
         if (AppSession.Current?.Role == UserRole.Administrator)
         {
-            panel.Children.Add(Note("테스트 데이터는 개발·예측 확인용입니다. 운영 의원 DB에서는 만들지 마세요. 기존 거래를 지우지는 않습니다. 품목 약 1만이 이미 있으면 중복 생성하지 않습니다."));
-            panel.Children.Add(Btn("테스트 데이터 생성 (품목 약 1만)", (_, _) =>
+            panel.Children.Add(Note("테스트 데이터는 개발·예측 확인용입니다. 운영 의원 DB에서는 만들지 마세요. 기존 거래를 지우지는 않습니다. 품목 1,000개가 이미 있으면 중복 생성하지 않습니다."));
+            panel.Children.Add(Btn("테스트 데이터 생성 (품목 1,000)", (_, _) =>
             {
                 if (MessageBox.Show(
-                        "품목 약 1만 개와 1년치 계절 거래를 추가합니다.\n운영 데이터면 '아니오'를 누르세요.",
+                        "품목 1,000개와 1년치 계절 거래를 추가합니다.\n운영 데이터면 '아니오'를 누르세요.",
                         ProductInfo.DisplayName,
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -929,7 +929,7 @@ public sealed class SettingsView : WorkspaceView
             }
             catch (Exception ex)
             {
-                status.Text = $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·사용은 계속하세요. {UpdateChecker.ReleasesUrl}";
+                status.Text = $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {UpdateChecker.ReleasesUrl}";
             }
             finally
             {

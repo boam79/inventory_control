@@ -40,7 +40,7 @@ public static class ReportUi
 {
     public const string Period = "기간";
     public const string Dimension = "구분";
-    public const string IssueQty = "사용수량";
+    public const string IssueQty = "출고수량";
     public const string ReceiptQty = "입고수량";
     public const string PurchaseAmount = "구매금액";
 }

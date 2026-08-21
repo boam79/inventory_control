@@ -92,7 +92,7 @@ public static class DashboardChartBuilder
             .First();
         var rising = lines.Where(IsRising).Select(l => l.Name).Take(3).ToArray();
         var falling = lines.Where(IsFalling).Select(l => l.Name).Take(3).ToArray();
-        var text = $"최근 달 사용이 가장 많은 품목은 {latest.Name} {latest.Qty:N0}개입니다.";
+        var text = $"최근 달 출고가 가장 많은 품목은 {latest.Name} {latest.Qty:N0}개입니다.";
         if (rising.Length > 0)
         {
             text += $" 예측이 오르는 품목: {string.Join(", ", rising)}.";

@@ -24,7 +24,7 @@ internal static class VelopackUpdater
         }
         catch (Exception ex)
         {
-            return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·사용은 계속하세요. {UpdateChecker.ReleasesUrl}";
+            return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {UpdateChecker.ReleasesUrl}";
         }
     }
 
@@ -68,7 +68,7 @@ internal static class VelopackUpdater
             }
             catch (Exception ex)
             {
-                return $"원인: 설치본 업데이트를 확인하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·사용은 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.ReleasesUrl)}";
+                return $"원인: 설치본 업데이트를 확인하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.ReleasesUrl)}";
             }
 
             if (info is null)
@@ -88,7 +88,7 @@ internal static class VelopackUpdater
 
             if (offer is { HashRequired: true } && string.IsNullOrWhiteSpace(offer.Sha256Hex))
             {
-                return "원인: 해시 파일을 확인하지 못했습니다.\n조치: 패키지를 적용하지 않습니다. 입고·사용은 계속하세요.";
+                return "원인: 해시 파일을 확인하지 못했습니다.\n조치: 패키지를 적용하지 않습니다. 입고·출고는 계속하세요.";
             }
 
             if (offer is { HashRequired: true, PackageUrl: not null } && !string.IsNullOrWhiteSpace(offer.Sha256Hex))
@@ -142,7 +142,7 @@ internal static class VelopackUpdater
         }
         catch (Exception ex)
         {
-            return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 지금 프로그램을 그대로 씁니다. 입고·사용은 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.ReleasesUrl)}";
+            return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 지금 프로그램을 그대로 씁니다. 입고·출고는 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.ReleasesUrl)}";
         }
     }
 
@@ -154,13 +154,13 @@ internal static class VelopackUpdater
     }
 
     private static string NotInstalledOrInitFailed(Exception ex, LatestReleaseOffer? offer) =>
-        $"원인: 업데이트 구성을 시작하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·사용은 계속하세요. 설치본에서만 자동 업데이트됩니다.\n다운로드: {offer?.PackageUrl ?? UpdateChecker.ReleasesUrl}";
+        $"원인: 업데이트 구성을 시작하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. 설치본에서만 자동 업데이트됩니다.\n다운로드: {offer?.PackageUrl ?? UpdateChecker.ReleasesUrl}";
 
     private static async Task<string> LaunchVerifiedSetupAsync(LatestReleaseOffer offer, IProgress<string>? progress)
     {
         if (offer is { HashRequired: true } && string.IsNullOrWhiteSpace(offer.Sha256Hex))
         {
-            return "원인: 해시 파일을 확인하지 못했습니다.\n조치: 패키지를 적용하지 않습니다. 입고·사용은 계속하세요.\n"
+            return "원인: 해시 파일을 확인하지 못했습니다.\n조치: 패키지를 적용하지 않습니다. 입고·출고는 계속하세요.\n"
                    + UpdateChecker.AfterVelopackNoUpdate(offer, ProductInfo.Version);
         }
 

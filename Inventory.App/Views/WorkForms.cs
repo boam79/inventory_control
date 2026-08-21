@@ -285,7 +285,7 @@ public sealed class IssueView : WorkspaceView
 {
     private sealed class IssueDocRow
     {
-        public required string 사용일 { get; init; }
+        public required string 출고일 { get; init; }
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
         public required int 품목수 { get; init; }
@@ -338,7 +338,7 @@ public sealed class IssueView : WorkspaceView
             var svc = new InventoryService(db, AppHost.Actor);
             rows = svc.ListDocumentSummaries(80).Where(d => d.Type == DocumentType.Issue).Select(d => new IssueDocRow
             {
-                사용일 = d.DocumentDate.ToString("yyyy-MM-dd"),
+                출고일 = d.DocumentDate.ToString("yyyy-MM-dd"),
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
                 품목수 = d.LineCount,
@@ -346,7 +346,7 @@ public sealed class IssueView : WorkspaceView
                 IsCancelled = d.IsCancelled
             }).ToList();
             selectedDoc = null;
-            var next = TableGrid(rows, ("사용일", "사용일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
+            var next = TableGrid(rows, ("출고일", "출고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as IssueDocRow;
             if (grid is null)
             {
@@ -440,7 +440,7 @@ public sealed class IssueView : WorkspaceView
         var register = new StackPanel();
         register.Children.Add(FormRow(
             Field("품목", itemQuery),
-            Field("사용일", date),
+            Field("출고일", date),
             Field("사용부서", dept),
             Field("수량", qty),
             Field("LOT", lot)));

@@ -19,7 +19,7 @@ public static class ShellPages
         "dashboard" => "대시보드",
         "stock" => "재고현황",
         "receive" => "입고",
-        "issue" => "사용",
+        "issue" => "출고",
         "stats" => "통계·보고서",
         "users" => "사용자·권한",
         "backup" => "백업·복원",
@@ -29,7 +29,7 @@ public static class ShellPages
 
     public static string Hint(string tag) => tag switch
     {
-        "dashboard" => "품목을 선택하면 사용 추이를 비교합니다.",
+        "dashboard" => "품목을 선택하면 출고 추이를 비교합니다.",
         "stock" => "로컬 · 오프라인",
         "receive" => "품목을 이름으로 고른 뒤 담아 저장합니다.",
         "issue" => "재고는 의원 한 곳입니다. 부서는 기록만 남깁니다.",
@@ -51,7 +51,7 @@ public static class ShellPages
         "dashboard" => "대시보드",
         "stock" => "재고",
         "receive" => "입고",
-        "issue" => "사용",
+        "issue" => "출고",
         "stats" => "통계",
         "users" => "사용자",
         "backup" => "백업",

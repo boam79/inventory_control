@@ -11,9 +11,9 @@ public sealed class DemoSeedTests : IDisposable
     public DemoSeedTests() => InventoryDatabase.Initialize(_dbPath);
 
     [Fact]
-    public void Default_item_count_is_ten_thousand()
+    public void Default_item_count_is_one_thousand()
     {
-        Assert.Equal(10_000, DemoSeedService.DefaultItemCount);
+        Assert.Equal(1_000, DemoSeedService.DefaultItemCount);
         Assert.True(DemoSeedService.SeasonalFactor("소독", 1) > DemoSeedService.SeasonalFactor("소독", 7));
         Assert.True(DemoSeedService.SeasonalFactor("수액", 7) > DemoSeedService.SeasonalFactor("수액", 1));
     }
@@ -147,6 +147,24 @@ public sealed class DemoSeedTests : IDisposable
         Assert.True(again.DocumentCount > firstCount * 0.4);
         Assert.Equal(40, db.Items.Count());
         Assert.Equal(0, db.Lots.Count(l => l.Quantity < 0));
+    }
+
+    [Fact]
+    public void Replace_sample_shrinks_item_count_exactly_when_asked_for_fewer_items()
+    {
+        // EnsureMasters only ever adds items to reach a target, so simply calling Generate again
+        // with a smaller itemCount would leave the old, larger item set in place. ReplaceSample
+        // must wipe items too so the requested count (e.g. exactly 1,000) is exact, not a floor.
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var today = new DateTime(2026, 8, 20);
+        Assert.True(DemoSeedService.Generate(db, today, itemCount: 100).Applied);
+        Assert.Equal(100, db.Items.Count());
+
+        var shrunk = DemoSeedService.ReplaceSample(db, today, itemCount: 25);
+        Assert.True(shrunk.Applied, shrunk.Message);
+        Assert.Equal(25, db.Items.Count());
+        Assert.Equal(25, shrunk.ItemCount);
+        Assert.All(db.Items.Select(i => i.Code), code => Assert.Matches("^P\\d{5}$", code));
     }
 
     public void Dispose()

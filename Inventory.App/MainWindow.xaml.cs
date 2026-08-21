@@ -135,7 +135,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        SetAlert("거래가 없어 테스트 데이터(품목 약 1만)를 넣는 중입니다...", isWarning: false);
+        SetAlert("거래가 없어 테스트 데이터(품목 1,000)를 넣는 중입니다...", isWarning: false);
         Mouse.OverrideCursor = Cursors.Wait;
         try
         {
@@ -185,7 +185,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetAlert($"원인: {AppLog.Sanitize(ex.Message)} 입고·사용은 계속하세요.", isWarning: true);
+            SetAlert($"원인: {AppLog.Sanitize(ex.Message)} 입고·출고는 계속하세요.", isWarning: true);
         }
         finally
         {

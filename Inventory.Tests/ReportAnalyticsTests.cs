@@ -105,7 +105,7 @@ public sealed class ReportAnalyticsTests : IDisposable
         Assert.Equal(5m, preview.ReceiptQty);
         Assert.Equal(2m, preview.IssueQty);
         Assert.Equal(500m, preview.PurchaseAmount);
-        Assert.Equal(ReportUi.IssueQty, "사용수량");
+        Assert.Equal(ReportUi.IssueQty, "출고수량");
         Assert.Equal(ReportUi.Period, "기간");
     }
 
