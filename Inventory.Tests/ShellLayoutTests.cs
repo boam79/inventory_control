@@ -103,6 +103,16 @@ public class ShellLayoutTests
         Assert.Contains("TableGrid", forms, StringComparison.Ordinal);
         Assert.Contains("검색·필터", forms, StringComparison.Ordinal);
         Assert.Contains("nameof(StockRow.현재고)", forms, StringComparison.Ordinal);
+        Assert.Contains("nameof(StockRow.상태)", forms, StringComparison.Ordinal);
+        Assert.Contains("Btn(\"전체\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Field(\"품목\", query)", forms, StringComparison.Ordinal);
+        Assert.Contains("Primary(\"적용\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Btn(\"초기화\"", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("(\"유효기간\", nameof(StockRow.유효기간))", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("Chip(\"out\", \"품절\")", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("Chip(\"reorder\", \"발주\")", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("Chip(\"unset\", \"미설정\")", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("Chip(\"exp\", \"임박\")", forms, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,6 +127,37 @@ public class ShellLayoutTests
         // Already-expired lots (음수 남은일) were listed with no visual flag.
         Assert.Contains("IsExpired = days is not null && days < 0", forms, StringComparison.Ordinal);
         Assert.Contains("class LotRow", forms, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Issue_recent_list_double_click_fills_item_field()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var issueStart = forms.IndexOf("public sealed class IssueView", StringComparison.Ordinal);
+        var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
+        Assert.True(issueStart >= 0 && stockStart > issueStart);
+        var issue = forms[issueStart..stockStart];
+        Assert.Contains("MouseDoubleClick", issue, StringComparison.Ordinal);
+        Assert.Contains("FirstItemName", issue, StringComparison.Ordinal);
+        Assert.Contains("itemQuery.Text = name", issue, StringComparison.Ordinal);
+        Assert.Contains("Field(\"LOT\", lot)", issue, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Receive_registration_omits_lot_expiry_and_voucher_fields()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var receiveStart = forms.IndexOf("public sealed class ReceiveView", StringComparison.Ordinal);
+        var issueStart = forms.IndexOf("public sealed class IssueView", StringComparison.Ordinal);
+        Assert.True(receiveStart >= 0 && issueStart > receiveStart);
+        var receive = forms[receiveStart..issueStart];
+        Assert.DoesNotContain("Field(\"LOT\"", receive, StringComparison.Ordinal);
+        Assert.DoesNotContain("Field(\"유효기간\"", receive, StringComparison.Ordinal);
+        Assert.DoesNotContain("Field(\"증빙번호\"", receive, StringComparison.Ordinal);
+        Assert.DoesNotContain("(\"증빙\", \"증빙\")", receive, StringComparison.Ordinal);
+        Assert.DoesNotContain("(\"LOT\", nameof(CartLine.LOT))", receive, StringComparison.Ordinal);
+        Assert.Contains("LotNumber = null", receive, StringComparison.Ordinal);
+        Assert.Contains("ExpiryDate = null", receive, StringComparison.Ordinal);
     }
 
     [Fact]

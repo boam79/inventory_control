@@ -17,8 +17,6 @@ public sealed class ReceiveView : WorkspaceView
         public required string 코드 { get; init; }
         public required decimal 수량 { get; init; }
         public required decimal 단가 { get; init; }
-        public required string LOT { get; init; }
-        public DateTime? 유효기간 { get; init; }
     }
 
     private sealed class ReceiptDocRow
@@ -26,7 +24,6 @@ public sealed class ReceiveView : WorkspaceView
         public required string 입고일 { get; init; }
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
-        public required string 증빙 { get; init; }
         public required int 품목수 { get; init; }
         public required string 상태 { get; init; }
         public required bool IsCancelled { get; init; }
@@ -36,14 +33,11 @@ public sealed class ReceiveView : WorkspaceView
     {
         var date = Date();
         var supplier = Box();
-        var docNo = Box();
         var itemQuery = Box();
         itemQuery.Width = 220;
         var selectedCode = "";
         var qty = Box("1");
         var price = Box("0");
-        var lot = Box();
-        var expiry = Date(DateTime.Today.AddDays(180));
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
         var cart = new List<CartLine>();
         DataGrid? cartGrid = null;
@@ -62,13 +56,12 @@ public sealed class ReceiveView : WorkspaceView
                 입고일 = d.DocumentDate.ToString("yyyy-MM-dd"),
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
-                증빙 = d.DocumentNo ?? "—",
                 품목수 = d.LineCount,
                 상태 = d.IsCancelled ? "취소됨" : "저장",
                 IsCancelled = d.IsCancelled
             }).ToList();
             selectedDoc = null;
-            var next = TableGrid(recent, ("입고일", "입고일"), ("전표", "전표"), ("품목", "품목"), ("증빙", "증빙"), ("품목수", "품목수"), ("상태", "상태"));
+            var next = TableGrid(recent, ("입고일", "입고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as ReceiptDocRow;
             if (recentGrid is null)
             {
@@ -119,8 +112,7 @@ public sealed class ReceiveView : WorkspaceView
                 ("품목", nameof(CartLine.품목)),
                 ("코드", nameof(CartLine.코드)),
                 ("수량", nameof(CartLine.수량)),
-                ("단가", nameof(CartLine.단가)),
-                ("LOT", nameof(CartLine.LOT)));
+                ("단가", nameof(CartLine.단가)));
             if (cartGrid is null)
             {
                 return;
@@ -177,9 +169,7 @@ public sealed class ReceiveView : WorkspaceView
                 품목 = itemQuery.Text.Trim(),
                 코드 = selectedCode,
                 수량 = qv,
-                단가 = pv,
-                LOT = lot.Text.Trim(),
-                유효기간 = expiry.SelectedDate
+                단가 = pv
             });
             status.Text = "";
             RenderCart();
@@ -208,14 +198,14 @@ public sealed class ReceiveView : WorkspaceView
                     var doc = svc.Receive(
                         date.SelectedDate ?? DateTime.Today,
                         supplierId,
-                        string.IsNullOrWhiteSpace(docNo.Text) ? null : docNo.Text,
+                        null,
                         cart.Select(l => new ReceiptLineRequest
                         {
                             ItemCode = l.코드,
                             Quantity = l.수량,
                             UnitPrice = l.단가,
-                            LotNumber = l.LOT,
-                            ExpiryDate = l.유효기간
+                            LotNumber = null,
+                            ExpiryDate = null
                         }).ToList());
                     cart.Clear();
                     RenderCart();
@@ -245,10 +235,7 @@ public sealed class ReceiveView : WorkspaceView
             Field("입고일", date),
             Field("공급업체", supplier),
             Field("수량", qty),
-            Field("단가", price),
-            Field("LOT", lot),
-            Field("유효기간", expiry),
-            Field("증빙번호", docNo));
+            Field("단가", price));
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         actions.Children.Add(add);
         actions.Children.Add(save);
@@ -288,6 +275,7 @@ public sealed class IssueView : WorkspaceView
         public required string 출고일 { get; init; }
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
+        public string? FirstItemName { get; init; }
         public required int 품목수 { get; init; }
         public required string 상태 { get; init; }
         public required bool IsCancelled { get; init; }
@@ -341,6 +329,7 @@ public sealed class IssueView : WorkspaceView
                 출고일 = d.DocumentDate.ToString("yyyy-MM-dd"),
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
+                FirstItemName = d.FirstItemName,
                 품목수 = d.LineCount,
                 상태 = d.IsCancelled ? "취소됨" : "저장",
                 IsCancelled = d.IsCancelled
@@ -348,6 +337,21 @@ public sealed class IssueView : WorkspaceView
             selectedDoc = null;
             var next = TableGrid(rows, ("출고일", "출고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as IssueDocRow;
+            next.MouseDoubleClick += (_, _) =>
+            {
+                if (next.SelectedItem is not IssueDocRow row)
+                {
+                    return;
+                }
+
+                var name = row.FirstItemName ?? row.품목;
+                if (string.IsNullOrWhiteSpace(name) || name == "—")
+                {
+                    return;
+                }
+
+                itemQuery.Text = name;
+            };
             if (grid is null)
             {
                 return;
@@ -483,7 +487,6 @@ public sealed class StockView : WorkspaceView
         public required string 코드 { get; init; }
         public required string 현재고 { get; init; }
         public required string 상태 { get; init; }
-        public required string 유효기간 { get; init; }
         public required StockStatusKind Kind { get; init; }
     }
 
@@ -491,7 +494,6 @@ public sealed class StockView : WorkspaceView
     {
         var query = Box();
         query.Width = 220;
-        var filter = "all";
         var page = 1;
         var all = new List<StockRow>();
         var gridHost = new StackPanel();
@@ -540,8 +542,7 @@ public sealed class StockView : WorkspaceView
                 ("품목", nameof(StockRow.품목)),
                 ("코드", nameof(StockRow.코드)),
                 ("현재고", nameof(StockRow.현재고)),
-                ("상태", nameof(StockRow.상태)),
-                ("유효기간", nameof(StockRow.유효기간)));
+                ("상태", nameof(StockRow.상태)));
             next.LoadingRow += (_, e) =>
             {
                 if (e.Row.Item is StockRow row && row.Kind is StockStatusKind.OutOfStock)
@@ -570,21 +571,12 @@ public sealed class StockView : WorkspaceView
             using var db = AppHost.OpenDb();
             var svc = new InventoryService(db, AppHost.Actor);
             var snaps = svc.SearchStockSnapshots(query.Text.Trim());
-            var shown = filter switch
-            {
-                "out" => snaps.Where(r => r.Status == StockStatusKind.OutOfStock),
-                "reorder" => snaps.Where(r => r.Status == StockStatusKind.Reorder),
-                "unset" => snaps.Where(r => r.Status == StockStatusKind.Unset),
-                "exp" => snaps.Where(r => r.Status == StockStatusKind.Expiring),
-                _ => snaps
-            };
-            all = shown.Select(s => new StockRow
+            all = snaps.Select(s => new StockRow
             {
                 품목 = s.Name,
                 코드 = s.Code,
                 현재고 = s.OnHand?.ToString("N3") ?? "미설정",
                 상태 = StatusKo(s.Status),
-                유효기간 = s.Status == StockStatusKind.Expiring ? "임박" : "—",
                 Kind = s.Status
             }).ToList();
             page = 1;
@@ -593,16 +585,7 @@ public sealed class StockView : WorkspaceView
         }
 
         var chips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-        void Chip(string id, string label) => chips.Children.Add(Btn(label, (_, _) =>
-        {
-            filter = id;
-            Reload();
-        }));
-        Chip("all", "전체");
-        Chip("out", "품절");
-        Chip("reorder", "발주");
-        Chip("unset", "미설정");
-        Chip("exp", "임박");
+        chips.Children.Add(Btn("전체", (_, _) => Reload()));
 
         var filters = new StackPanel();
         filters.Children.Add(FormRow(Field("품목", query)));
@@ -611,7 +594,6 @@ public sealed class StockView : WorkspaceView
         apply.Children.Add(Btn("초기화", (_, _) =>
         {
             query.Text = "";
-            filter = "all";
             Reload();
         }));
         filters.Children.Add(apply);
