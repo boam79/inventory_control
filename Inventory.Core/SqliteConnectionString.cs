@@ -5,7 +5,7 @@ public static class SqliteConnectionString
     public static string FromFile(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        return $"Data Source={path}";
+        return $"Data Source={path};Cache=Shared;Pooling=True";
     }
 
     public static string DefaultDatabasePath()

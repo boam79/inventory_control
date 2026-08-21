@@ -74,6 +74,95 @@ public sealed class ReportAnalyticsTests : IDisposable
         Assert.Equal(ReportUi.Period, "기간");
     }
 
+    [Fact]
+    public void Trailing_monthly_issues_can_filter_by_item()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "주사", "개", "개", 10);
+        svc.CreateItem("M002", "거즈", "드레싱", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 100, new DateTime(2025, 1, 1), new DateTime(2027, 1, 1));
+        svc.SaveOpeningDraft("M002", "OPEN", 100, new DateTime(2025, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("M001");
+        svc.ConfirmOpening("M002");
+        svc.Issue(new DateTime(2026, 8, 3), null, [new IssueLineRequest { ItemCode = "M001", Quantity = 4, LotNumber = "OPEN" }]);
+        svc.Issue(new DateTime(2026, 8, 4), null, [new IssueLineRequest { ItemCode = "M002", Quantity = 7, LotNumber = "OPEN" }]);
+
+        var today = new DateTime(2026, 8, 21);
+        var all = DashboardMetrics.TrailingMonthlyIssues(db, today, 13);
+        var m001 = DashboardMetrics.TrailingMonthlyIssues(db, today, 13, "M001");
+        var m002 = DashboardMetrics.TrailingMonthlyIssues(db, today, 13, "M002");
+        var missing = DashboardMetrics.TrailingMonthlyIssues(db, today, 13, "NOPE");
+        Assert.Equal(11m, all.Single(s => s.Year == 2026 && s.Month == 8).Qty);
+        Assert.Equal(4m, m001.Single(s => s.Year == 2026 && s.Month == 8).Qty);
+        Assert.Equal(7m, m002.Single(s => s.Year == 2026 && s.Month == 8).Qty);
+        Assert.Equal(0m, missing.Single(s => s.Year == 2026 && s.Month == 8).Qty);
+
+        var byItems = DashboardMetrics.TrailingMonthlyIssuesByItems(db, today, ["M001", "M002"]);
+        Assert.Equal(4m, byItems["M001"].Single(s => s.Year == 2026 && s.Month == 8).Qty);
+        Assert.Equal(7m, byItems["M002"].Single(s => s.Year == 2026 && s.Month == 8).Qty);
+
+        var plot = DashboardChartBuilder.Build(byItems, [("M001", "주사기"), ("M002", "거즈")]);
+        Assert.Equal(2, plot.Lines.Count);
+        Assert.Equal(13, plot.Labels.Count);
+        Assert.Equal(13, plot.Lines[0].Actual.Count);
+        Assert.True(DashboardChartBuilder.HasDrawableActual(plot.Lines[0]));
+        Assert.True(DashboardChartBuilder.HasDrawableActual(plot.Lines[1]));
+        Assert.Equal(4d, plot.Lines[0].Actual[^1]);
+        Assert.Equal(7d, plot.Lines[1].Actual[^1]);
+        Assert.All(plot.Lines, line => Assert.DoesNotContain(line.Actual, double.IsNaN));
+
+        svc.CreateItem("M003", "장갑", "소독", "개", "개", 10);
+        svc.CreateItem("M004", "알코올", "소독", "개", "개", 10);
+        svc.SaveOpeningDraft("M003", "OPEN", 100, new DateTime(2025, 1, 1), new DateTime(2027, 1, 1));
+        svc.SaveOpeningDraft("M004", "OPEN", 100, new DateTime(2025, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("M003");
+        svc.ConfirmOpening("M004");
+        svc.Issue(new DateTime(2026, 8, 5), null, [new IssueLineRequest { ItemCode = "M003", Quantity = 9, LotNumber = "OPEN" }]);
+        svc.Issue(new DateTime(2026, 8, 6), null, [new IssueLineRequest { ItemCode = "M004", Quantity = 11, LotNumber = "OPEN" }]);
+        var four = DashboardMetrics.TrailingMonthlyIssuesByItems(db, today, ["M001", "M002", "M003", "M004"]);
+        var fourPlot = DashboardChartBuilder.Build(four, [("M001", "주사기"), ("M002", "거즈"), ("M003", "장갑"), ("M004", "알코올")]);
+        Assert.Equal(4, fourPlot.Lines.Count);
+        Assert.Equal(4, fourPlot.Lines.Select(l => l.Code).Distinct().Count());
+        Assert.Equal(new[] { 4d, 7d, 9d, 11d }, fourPlot.Lines.Select(l => l.Actual[^1]).ToArray());
+
+        // Each item gets its own mini chart (no shared scale), so a huge item and a tiny item
+        // do not distort each other; each line keeps its own actual+forecast series.
+        var combinedLabels = DashboardChartBuilder.CombinedLabels(fourPlot);
+        Assert.Equal(16, combinedLabels.Count);
+        Assert.Equal(4, combinedLabels.Count(l => l.Length > 0));
+
+        foreach (var line in fourPlot.Lines)
+        {
+            var actualWithGap = DashboardChartBuilder.ActualWithGap(line);
+            var forecastWithAnchor = DashboardChartBuilder.ForecastWithAnchor(line);
+            Assert.Equal(16, actualWithGap.Length);
+            Assert.Equal(16, forecastWithAnchor.Length);
+            Assert.True(double.IsNaN(actualWithGap[13]));
+            Assert.Equal(line.Actual[^1], forecastWithAnchor[12]);
+            Assert.True(double.IsNaN(forecastWithAnchor[0]));
+        }
+
+        IReadOnlyList<MonthlyQty> Flat(decimal qty) =>
+            Enumerable.Range(0, 13)
+                .Select(i =>
+                {
+                    var month = new DateTime(2025, 8, 1).AddMonths(i);
+                    return new MonthlyQty(month.Year, month.Month, qty);
+                })
+                .ToList();
+        var mixed = DashboardChartBuilder.Build(
+            new Dictionary<string, IReadOnlyList<MonthlyQty>>
+            {
+                ["A"] = Flat(800),
+                ["B"] = Flat(5)
+            },
+            [("A", "대량품목"), ("B", "소량품목")]);
+        Assert.Equal(800d, mixed.Lines[0].Actual[^1]);
+        Assert.Equal(5d, mixed.Lines[1].Actual[^1]);
+        Assert.Contains("대량품목", mixed.Insight, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

@@ -439,66 +439,108 @@ public sealed class InventoryService
         var today = DateTime.Today;
         var warnUntil = today.AddDays(expiryWarningDays);
         query ??= string.Empty;
-        var itemQuery = _db.Items.AsQueryable();
+        var itemQuery = _db.Items.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(query))
         {
             itemQuery = itemQuery.Where(i =>
                 i.Code.Contains(query) || i.Name.Contains(query) || i.Category.Contains(query));
         }
 
-        itemQuery = itemQuery.OrderBy(i => i.Code);
-        if (take is not null)
-        {
-            itemQuery = itemQuery.Take(take.Value);
-        }
-
-        var items = itemQuery.ToList();
-        var ids = items.Select(i => i.Id).ToList();
-        var qty = _db.Lots
-            .Where(l => ids.Contains(l.ItemId))
+        var items = itemQuery
+            .OrderBy(i => i.Code)
+            .Select(i => new { i.Id, i.Code, i.Name, i.IsActive, i.OpeningStatus, i.MinStock })
+            .ToList();
+        var qty = _db.Lots.AsNoTracking()
             .GroupBy(l => l.ItemId)
             .Select(g => new { g.Key, Qty = g.Sum(x => x.Quantity) })
             .ToList()
             .ToDictionary(x => x.Key, x => x.Qty);
-        var expiring = _db.Lots
-            .Where(l => ids.Contains(l.ItemId)
-                        && l.Quantity > 0
-                        && l.ExpiryDate != null
-                        && l.ExpiryDate.Value.Date <= warnUntil)
+        var expiring = _db.Lots.AsNoTracking()
+            .Where(l => l.Quantity > 0 && l.ExpiryDate != null && l.ExpiryDate.Value.Date <= warnUntil)
             .Select(l => l.ItemId)
             .Distinct()
             .ToHashSet();
 
-        return items.Select(item =>
+        IEnumerable<StockSnapshot> snaps = items.Select(item =>
         {
             decimal? onHand = item.OpeningStatus == OpeningStatus.Unset
                 ? null
                 : qty.GetValueOrDefault(item.Id);
-            var status = Classify(item, onHand, expiring.Contains(item.Id));
-            return new StockSnapshot(item.Code, item.Name, onHand, status);
-        }).ToList();
+            var status = Classify(item.IsActive, item.OpeningStatus, item.MinStock, onHand, expiring.Contains(item.Id));
+            return new StockSnapshot(item.Code, item.Name, onHand, status, item.MinStock);
+        });
+        if (take is not null)
+        {
+            snaps = snaps.Take(take.Value);
+        }
+
+        return snaps.ToList();
     }
 
-    public IReadOnlyList<Item> ReorderItems() =>
-        SearchStockSnapshots(string.Empty)
+    public IReadOnlyList<Item> ReorderItems()
+    {
+        var codes = SearchStockSnapshots(string.Empty)
             .Where(row => row.Status is StockStatusKind.Reorder or StockStatusKind.OutOfStock)
-            .Select(row => RequireItem(row.Code))
+            .Select(row => row.Code)
             .ToList();
+        return _db.Items.AsNoTracking().Where(i => codes.Contains(i.Code)).ToList();
+    }
 
     public IReadOnlyList<StockDocument> ListDocuments(int? take = null)
     {
-        var query = _db.Documents.Include(d => d.Lines).OrderByDescending(d => d.Id);
+        var query = _db.Documents.AsNoTracking().Include(d => d.Lines).OrderByDescending(d => d.Id);
         return (take is null ? query : query.Take(take.Value)).ToList();
     }
 
-    private static StockStatusKind Classify(Item item, decimal? onHand, bool expiring)
+    public IReadOnlyList<DocumentSummary> ListDocumentSummaries(int take)
     {
-        if (!item.IsActive)
+        var summaries = _db.Documents.AsNoTracking()
+            .OrderByDescending(d => d.Id)
+            .Take(take)
+            .Select(d => new
+            {
+                d.Id,
+                d.Type,
+                d.DocumentDate,
+                d.DocumentNo,
+                d.IsCancelled,
+                LineCount = d.Lines.Count,
+                FirstItemId = d.Lines.OrderBy(l => l.Id).Select(l => (int?)l.ItemId).FirstOrDefault()
+            })
+            .ToList();
+
+        var itemIds = summaries.Where(s => s.FirstItemId.HasValue).Select(s => s.FirstItemId!.Value).Distinct().ToList();
+        var names = _db.Items.AsNoTracking()
+            .Where(i => itemIds.Contains(i.Id))
+            .ToDictionary(i => i.Id, i => i.Name);
+
+        return summaries.Select(s => new DocumentSummary(
+                s.Id,
+                s.Type,
+                s.DocumentDate,
+                s.DocumentNo,
+                s.IsCancelled,
+                s.LineCount,
+                s.FirstItemId.HasValue && names.TryGetValue(s.FirstItemId.Value, out var name) ? name : null))
+            .ToList();
+    }
+
+    private static StockStatusKind Classify(Item item, decimal? onHand, bool expiring) =>
+        Classify(item.IsActive, item.OpeningStatus, item.MinStock, onHand, expiring);
+
+    private static StockStatusKind Classify(
+        bool isActive,
+        OpeningStatus opening,
+        decimal minStock,
+        decimal? onHand,
+        bool expiring)
+    {
+        if (!isActive)
         {
             return StockStatusKind.Inactive;
         }
 
-        if (item.OpeningStatus == OpeningStatus.Unset || onHand is null)
+        if (opening == OpeningStatus.Unset || onHand is null)
         {
             return StockStatusKind.Unset;
         }
@@ -508,7 +550,7 @@ public sealed class InventoryService
             return StockStatusKind.OutOfStock;
         }
 
-        if (onHand <= item.MinStock)
+        if (onHand <= minStock)
         {
             return StockStatusKind.Reorder;
         }

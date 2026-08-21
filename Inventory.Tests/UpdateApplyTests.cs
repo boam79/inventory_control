@@ -43,6 +43,52 @@ public class UpdateApplyTests
     }
 
     [Fact]
+    public void Remote_tag_is_newer_than_installed_version()
+    {
+        Assert.True(UpdateChecker.IsRemoteNewer("v1.0.4", "1.0.3"));
+        Assert.True(UpdateChecker.IsRemoteNewer("1.0.5", "1.0.4"));
+        Assert.False(UpdateChecker.IsRemoteNewer("v1.0.4", "1.0.4"));
+        Assert.False(UpdateChecker.IsRemoteNewer("v1.0.3", "1.0.4"));
+        Assert.False(UpdateChecker.IsRemoteNewer("", "1.0.4"));
+    }
+
+    [Fact]
+    public void Velopack_null_update_does_not_claim_latest_when_github_is_newer()
+    {
+        var offer = new LatestReleaseOffer(
+            true,
+            "v1.0.4",
+            "https://github.com/boam79/inventory_control/releases/download/v1.0.4/SpringClinic.Inventory-win-Setup.exe",
+            null,
+            null,
+            false,
+            "최신 v1.0.4");
+        var message = UpdateChecker.AfterVelopackNoUpdate(offer, "1.0.3");
+        Assert.DoesNotContain("새 설치 버전이 없습니다", message);
+        Assert.Contains("v1.0.4", message);
+        Assert.Contains("Setup.exe", message);
+        Assert.Contains("피드", message);
+    }
+
+    [Fact]
+    public void Status_message_asks_to_update_when_github_is_newer()
+    {
+        var offer = new LatestReleaseOffer(
+            true,
+            "v1.0.4",
+            "https://example.invalid/Setup.exe",
+            null,
+            null,
+            false,
+            "최신 v1.0.4");
+        var status = UpdateChecker.StatusMessage(offer, "1.0.3");
+        Assert.Contains("새 버전", status);
+        Assert.Contains("v1.0.4", status);
+        Assert.Contains("1.0.3", status);
+        Assert.DoesNotContain("새 설치 버전이 없습니다", status);
+    }
+
+    [Fact]
     public async Task Inspect_latest_fills_sha256_hex_when_hash_asset_exists()
     {
         var package = "pkg"u8.ToArray();

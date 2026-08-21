@@ -62,4 +62,30 @@ public class RolePermissionsTests
         Assert.False(flags.CanManageUsers);
         Assert.False(flags.CanChangeSettings);
     }
+
+    [Fact]
+    public void Department_menu_hides_receive_close_and_admin()
+    {
+        var tags = ShellPages.VisibleTags(RolePermissions.For(UserRole.DepartmentUser));
+        Assert.Contains("dashboard", tags);
+        Assert.Contains("issue", tags);
+        Assert.Contains("stock", tags);
+        Assert.DoesNotContain("receive", tags);
+        Assert.DoesNotContain("close", tags);
+        Assert.DoesNotContain("users", tags);
+        Assert.DoesNotContain("masters", tags);
+        Assert.DoesNotContain("backup", tags);
+        Assert.DoesNotContain("settings", tags);
+        Assert.DoesNotContain("lots", tags);
+    }
+
+    [Fact]
+    public void Purchasing_menu_shows_receive_not_issue()
+    {
+        var tags = ShellPages.VisibleTags(RolePermissions.For(UserRole.Purchasing));
+        Assert.Contains("receive", tags);
+        Assert.DoesNotContain("issue", tags);
+        Assert.DoesNotContain("users", tags);
+        Assert.DoesNotContain("close", tags);
+    }
 }

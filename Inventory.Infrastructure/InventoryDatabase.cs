@@ -13,7 +13,34 @@ public static class InventoryDatabase
         var options = new DbContextOptionsBuilder<InventoryDbContext>()
             .UseSqlite(SqliteConnectionString.FromFile(dbPath))
             .Options;
-        return new InventoryDbContext(options);
+        var db = new InventoryDbContext(options);
+        ApplySqlitePragmas(db);
+        return db;
+    }
+
+    private static void ApplySqlitePragmas(InventoryDbContext db)
+    {
+        db.Database.OpenConnection();
+        var conn = db.Database.GetDbConnection();
+        foreach (var sql in new[]
+                 {
+                     "PRAGMA journal_mode=WAL;",
+                     "PRAGMA synchronous=NORMAL;",
+                     "PRAGMA cache_size=-16000;",
+                     "PRAGMA temp_store=MEMORY;"
+                 })
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    private static void EnsureReadIndexes(InventoryDbContext db)
+    {
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Items_Name ON Items(Name);");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Lots_ExpiryDate ON Lots(ExpiryDate);");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Documents_TypeDate ON Documents(Type, IsCancelled, DocumentDate);");
     }
 
     public static void Initialize(string dbPath)
@@ -27,6 +54,8 @@ public static class InventoryDatabase
 
         using var db = CreateContext(dbPath);
         db.Database.Migrate();
+        ApplySqlitePragmas(db);
+        EnsureReadIndexes(db);
 
         if (!db.AppMeta.Any(row => row.Key == SchemaVersionKey))
         {

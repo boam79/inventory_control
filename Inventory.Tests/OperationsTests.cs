@@ -251,6 +251,11 @@ public sealed class OperationsTests : IDisposable
         Assert.Contains(ssa.ModelName, new[] { "ML.NET-SSA", "SMA3" });
         var onnx = UsageForecast.Predict(new decimal[] { 1, 2, 3 }, new DisabledOnnxForecastEngine());
         Assert.NotEqual("ONNX", onnx.ModelName);
+        var seasonal = UsageForecast.Predict(new decimal[] { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 15 });
+        Assert.Equal("전년동월", seasonal.ModelName);
+        Assert.Equal(20m, seasonal.Future[0]);
+        Assert.Equal(30m, seasonal.Future[1]);
+        Assert.Equal(40m, seasonal.Future[2]);
     }
 
     [Fact]

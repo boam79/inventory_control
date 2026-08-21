@@ -1,4 +1,4 @@
-using Inventory.Core;
+﻿using Inventory.Core;
 using Inventory.Infrastructure;
 using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
@@ -6,7 +6,7 @@ using LiveChartsCore.SkiaSharpView.Painting;
 using LiveChartsCore.SkiaSharpView.WPF;
 using Microsoft.Win32;
 using SkiaSharp;
-using System.Globalization;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -17,23 +17,25 @@ namespace Inventory.App.Views;
 
 public abstract class WorkspaceView : UserControl
 {
-    protected static TextBox Box(string text = "") => new() { Text = text, MinWidth = 88, MaxWidth = 220, Margin = new Thickness(4) };
-    protected static DatePicker Date(DateTime? value = null) => new() { SelectedDate = value ?? DateTime.Today, Margin = new Thickness(4) };
-    protected static Button Btn(string text, RoutedEventHandler click)
+    protected static TextBox Box(string text = "") => new() { Text = text, MinWidth = 160, Width = 180 };
+    protected static DatePicker Date(DateTime? value = null) => new() { SelectedDate = value ?? DateTime.Today, Width = 160 };
+
+    protected static Button Styled(string text, string styleKey, RoutedEventHandler click)
     {
-        var button = new Button { Content = text, Margin = new Thickness(4), Padding = new Thickness(10, 4, 10, 4), MinWidth = 80 };
+        var button = new Button { Content = text, Margin = new Thickness(0, 0, 8, 0) };
+        if (Application.Current?.TryFindResource(styleKey) is Style style)
+        {
+            button.Style = style;
+        }
+
         button.Click += click;
         return button;
     }
 
-    protected static TextBlock Title(string text) => new()
-    {
-        Text = text,
-        FontSize = 20,
-        FontWeight = FontWeights.SemiBold,
-        Foreground = new SolidColorBrush(Color.FromRgb(32, 42, 54)),
-        Margin = new Thickness(0, 0, 0, 8)
-    };
+    protected static Button Btn(string text, RoutedEventHandler click) => Styled(text, "GhostButton", click);
+    protected static Button Primary(string text, RoutedEventHandler click) => Styled(text, "PrimaryButton", click);
+    protected static Button Danger(string text, RoutedEventHandler click) => Styled(text, "DangerButton", click);
+
     protected static TextBlock Note(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new Thickness(0, 0, 0, 8) };
 
     protected static void Alert(string message)
@@ -46,48 +48,203 @@ public abstract class WorkspaceView : UserControl
         MessageBox.Show(message, ProductInfo.DisplayName);
     }
 
-    protected static DataGrid GridOf(object items, params (string Header, string Binding)[] columns)
+    protected static StackPanel Field(string label, UIElement input)
+    {
+        if (input is FrameworkElement fe)
+        {
+            fe.HorizontalAlignment = HorizontalAlignment.Left;
+            fe.Margin = new Thickness(0);
+        }
+
+        var stack = new StackPanel { Margin = new Thickness(0, 0, 16, 12) };
+        stack.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 12,
+            Foreground = Brushes.DimGray,
+            Margin = new Thickness(0, 0, 0, 4)
+        });
+        stack.Children.Add(input);
+        return stack;
+    }
+
+    protected static Border Section(string title, UIElement body, UIElement? extra = null)
+    {
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+        if (extra is not null)
+        {
+            DockPanel.SetDock(extra, Dock.Right);
+            head.Children.Add(extra);
+        }
+
+        head.Children.Add(new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        var stack = new StackPanel();
+        stack.Children.Add(head);
+        stack.Children.Add(body);
+        return new Border
+        {
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(226, 232, 234)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16),
+            Margin = new Thickness(0, 0, 0, 12),
+            Child = stack
+        };
+    }
+
+    protected static WrapPanel FormRow(params UIElement[] fields)
+    {
+        var row = new WrapPanel();
+        foreach (var field in fields)
+        {
+            row.Children.Add(field);
+        }
+
+        return row;
+    }
+
+    protected static DataGrid TableGrid(object items, params (string Header, string Binding)[] columns)
     {
         var grid = new DataGrid
         {
             ItemsSource = items is System.Collections.IEnumerable enumerable ? enumerable : new[] { items },
             AutoGenerateColumns = columns.Length == 0,
-            IsReadOnly = true,
-            EnableRowVirtualization = true,
-            EnableColumnVirtualization = true,
-            MinHeight = 280,
-            VerticalAlignment = VerticalAlignment.Stretch
+            MaxHeight = UiLayout.ListMaxHeight,
+            SelectionMode = DataGridSelectionMode.Single
         };
         foreach (var column in columns)
         {
             grid.Columns.Add(new DataGridTextColumn
             {
                 Header = column.Header,
-                Binding = new Binding(column.Binding),
-                Width = new DataGridLength(1, DataGridLengthUnitType.Star)
+                Binding = new System.Windows.Data.Binding(column.Binding),
+                Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+                IsReadOnly = true
             });
         }
 
         VirtualizingPanel.SetIsVirtualizing(grid, true);
         VirtualizingPanel.SetVirtualizationMode(grid, VirtualizationMode.Recycling);
-        VirtualizingPanel.SetScrollUnit(grid, ScrollUnit.Pixel);
         return grid;
     }
+
+    protected static DockPanel Pager(TextBlock count, TextBlock pageText, Action prev, Action next)
+    {
+        var bar = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        buttons.Children.Add(Btn("이전", (_, _) => prev()));
+        buttons.Children.Add(Btn("다음", (_, _) => next()));
+        DockPanel.SetDock(buttons, Dock.Right);
+        bar.Children.Add(buttons);
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(count);
+        left.Children.Add(pageText);
+        bar.Children.Add(left);
+        return bar;
+    }
+
+    protected static Border ItemCard(string title, string meta, Action? click = null, string? badge = null)
+    {
+        var card = new Border
+        {
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(216, 222, 228)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(12, 10, 12, 10),
+            Margin = new Thickness(0, 0, 0, 8),
+            Cursor = click is null ? Cursors.Arrow : Cursors.Hand
+        };
+        var row = new DockPanel();
+        if (!string.IsNullOrWhiteSpace(badge))
+        {
+            var chip = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(232, 238, 243)),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(8, 2, 8, 2),
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            chip.Child = new TextBlock { Text = badge, FontSize = 12 };
+            DockPanel.SetDock(chip, Dock.Right);
+            row.Children.Add(chip);
+        }
+
+        var text = new StackPanel();
+        text.Children.Add(new TextBlock { Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        if (!string.IsNullOrWhiteSpace(meta))
+        {
+            text.Children.Add(new TextBlock { Text = meta, FontSize = 12, Foreground = Brushes.DimGray, Margin = new Thickness(0, 2, 0, 0), TextWrapping = TextWrapping.Wrap });
+        }
+
+        row.Children.Add(text);
+        card.Child = row;
+        if (click is not null)
+        {
+            card.MouseLeftButtonUp += (_, _) => click();
+        }
+
+        return card;
+    }
+
+    protected static string StatusKo(StockStatusKind status) => status switch
+    {
+        StockStatusKind.Unset => "미설정",
+        StockStatusKind.Reorder => "발주 권장",
+        StockStatusKind.OutOfStock => "품절",
+        StockStatusKind.Expiring => "유효기간 임박",
+        StockStatusKind.Inactive => "사용중지",
+        _ => "정상"
+    };
+
+    protected static string DocTypeKo(DocumentType type) => type switch
+    {
+        DocumentType.Receipt => "입고",
+        DocumentType.Issue => "사용",
+        DocumentType.Adjustment => "조정",
+        DocumentType.Opening => "초기재고",
+        DocumentType.Reversal => "취소(반대)",
+        _ => type.ToString()
+    };
 }
 
 public sealed class DashboardView : WorkspaceView
 {
+    private sealed class ItemRow : INotifyPropertyChanged
+    {
+        private bool _selected;
+        public bool 선택
+        {
+            get => _selected;
+            set
+            {
+                if (_selected == value)
+                {
+                    return;
+                }
+
+                _selected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(선택)));
+            }
+        }
+        public required string 품목 { get; init; }
+        public required string 코드 { get; init; }
+        public required string 현재고 { get; init; }
+        public required string 상태 { get; init; }
+        public required StockStatusKind Kind { get; init; }
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
+
     public DashboardView()
     {
         using var db = AppHost.OpenDb();
         var svc = new InventoryService(db, AppHost.Actor);
         var today = DateTime.Today;
         var kpi = DashboardMetrics.Build(db, svc, today);
-        var months = DashboardMetrics.TrailingMonthlyIssues(db, today, 13);
-        var forecast = UsageForecast.Predict(months.Select(s => s.Qty).ToList());
 
         var panel = new StackPanel();
-        panel.Children.Add(Title("대시보드"));
         if (DemoSeedService.ShouldAutoSeed(db) && AppSession.Current?.Role == UserRole.Administrator)
         {
             var seedButton = Btn("테스트 데이터 생성 (품목 약 1만 · 1년치)", (_, _) =>
@@ -98,8 +255,7 @@ public sealed class DashboardView : WorkspaceView
                     var message = AppHost.Run((inner, _) =>
                         DemoSeedService.TryAutoSeed(inner, DateTime.Today, AppHost.Actor).Message);
                     Alert(message);
-                    var host = Window.GetWindow(this);
-                    if (host is MainWindow main)
+                    if (Window.GetWindow(this) is MainWindow main)
                     {
                         main.ShowDashboard();
                     }
@@ -116,18 +272,51 @@ public sealed class DashboardView : WorkspaceView
             panel.Children.Add(seedButton);
             panel.Children.Add(Note("입고·사용 거래가 없습니다. 이 버튼을 누르면 대시보드·예측용 가상 데이터가 생깁니다. 실제 거래가 있으면 자동으로 넣지 않습니다."));
         }
+        else if (AppSession.Current?.Role == UserRole.Administrator)
+        {
+            var replaceButton = Btn("샘플 데이터를 다양하게 다시 만들기", (_, _) =>
+            {
+                if (MessageBox.Show(
+                        "기존 입고·사용 거래를 지우고, 품목마다 수량·날짜·계절이 다른 테스트 데이터를 다시 넣습니다.\n운영 의원 데이터면 '아니오'를 누르세요.",
+                        ProductInfo.DisplayName,
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                Mouse.OverrideCursor = Cursors.Wait;
+                try
+                {
+                    var message = AppHost.Run((inner, _) =>
+                        DemoSeedService.ReplaceSample(inner, DateTime.Today, AppHost.Actor).Message);
+                    Alert(message);
+                    if (Window.GetWindow(this) is MainWindow main)
+                    {
+                        main.ShowDashboard();
+                    }
+                }
+                finally
+                {
+                    Mouse.OverrideCursor = null;
+                }
+            });
+            replaceButton.FontSize = 15;
+            replaceButton.Padding = new Thickness(14, 8, 14, 8);
+            replaceButton.HorizontalAlignment = HorizontalAlignment.Left;
+            panel.Children.Add(replaceButton);
+            panel.Children.Add(Note("테스트 데이터가 너무 비슷하면 이 버튼으로 다시 만듭니다. 기존 입고·사용은 삭제됩니다."));
+        }
         else
         {
-            panel.Children.Add(Note("발주 필요·품절은 강조 색입니다. 예측은 참고용이며 자동 발주하지 않습니다."));
+            panel.Children.Add(Note("표에서 품목을 하나 이상 선택하면 사용 추이를 봅니다. 여러 개를 고르면 함께 비교하고, 한 번에 최대 8개입니다. 예측은 참고용이며 자동 발주하지 않습니다."));
         }
+
         var cards = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-        cards.Children.Add(KpiCard("발주 필요", kpi.ReorderItems.ToString("N0"), warn: kpi.ReorderItems > 0, open: "reorder"));
+        cards.Children.Add(KpiCard("발주 필요", kpi.ReorderItems.ToString("N0"), warn: kpi.ReorderItems > 0, open: "stock"));
         cards.Children.Add(KpiCard("품절", kpi.OutOfStockItems.ToString("N0"), danger: kpi.OutOfStockItems > 0, open: "stock"));
-        cards.Children.Add(KpiCard("유효기간 임박", kpi.ExpiringLots.ToString("N0"), warn: kpi.ExpiringLots > 0, open: "lots"));
-        cards.Children.Add(KpiCard(
-            "오늘 입·출고",
-            $"{kpi.TodayReceiptDocs + kpi.TodayIssueDocs:N0}",
-            open: "ledger"));
+        cards.Children.Add(KpiCard("유효기간 임박", kpi.ExpiringLots.ToString("N0"), warn: kpi.ExpiringLots > 0, open: "stock"));
+        cards.Children.Add(KpiCard("오늘 입·출고", $"{kpi.TodayReceiptDocs + kpi.TodayIssueDocs:N0}", open: "stats"));
         panel.Children.Add(cards);
         panel.Children.Add(new TextBlock
         {
@@ -136,64 +325,382 @@ public sealed class DashboardView : WorkspaceView
             Margin = new Thickness(0, 0, 0, 8),
             TextWrapping = TextWrapping.Wrap
         });
-        panel.Children.Add(new TextBlock
-        {
-            Text = forecast.Available
-                ? $"예측({forecast.ModelName})은 참고용이며 자동 발주하지 않습니다. 막대=실제, 점선=예측."
-                : forecast.Warning,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8)
-        });
 
-        var labels = months.Select(s => $"{s.Year}-{s.Month:00}").Concat(["예측+1", "예측+2", "예측+3"]).ToArray();
-        var actualValues = months.Select(s => (double)s.Qty).Concat([double.NaN, double.NaN, double.NaN]).ToArray();
-        var predictedValues = Enumerable.Repeat(double.NaN, months.Count)
-            .Concat(forecast.Available ? forecast.Future.Select(v => (double)v) : new[] { double.NaN, double.NaN, double.NaN })
-            .ToArray();
-        var gridPaint = new SolidColorPaint(new SKColor(220, 224, 228)) { StrokeThickness = 1 };
-        var actual = new ColumnSeries<double>
+        var query = Box();
+        query.Width = 220;
+        var filter = "all";
+        var page = 1;
+        var all = new List<ItemRow>();
+        var suppressSelect = false;
+        var gridHost = new StackPanel();
+        var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
+        var pageText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+        var chartHost = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        SKColor[] palette =
+        [
+            new SKColor(31, 111, 115),
+            new SKColor(196, 123, 22),
+            new SKColor(61, 90, 115),
+            new SKColor(46, 125, 50),
+            new SKColor(123, 31, 162),
+            new SKColor(176, 58, 46),
+            new SKColor(2, 119, 189),
+            new SKColor(93, 64, 55)
+        ];
+
+        void ShowEmptyChart()
         {
-            Name = "실제 사용",
-            Values = actualValues,
-            Fill = new SolidColorPaint(new SKColor(61, 90, 115, 200))
-        };
-        var predicted = new LineSeries<double>
-        {
-            Name = "예측",
-            Values = predictedValues,
-            Fill = null,
-            GeometrySize = 6,
-            Stroke = new SolidColorPaint(new SKColor(176, 58, 46), 2)
+            chartHost.Children.Clear();
+            chartHost.Children.Add(new TextBlock
             {
-                PathEffect = new LiveChartsCore.SkiaSharpView.Painting.Effects.DashEffect([6, 4])
-            }
-        };
-        panel.Children.Add(new CartesianChart
+                Text = $"표에서 품목의 「선택」을 켜면 사용 추이가 나옵니다. 여러 개를 고르면 함께 비교합니다. 한 번에 최대 {UiLayout.ChartItemMax}개입니다.",
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        void UpdateSelectionCount()
         {
-            Height = 340,
-            LegendPosition = LiveChartsCore.Measure.LegendPosition.Bottom,
-            Series = new ISeries[] { actual, predicted },
-            XAxes =
-            [
-                new Axis
+            count.Text = $"총 {all.Count:N0}건 · 선택 {all.Count(r => r.선택):N0}개";
+        }
+
+        void ShowChart()
+        {
+            UpdateSelectionCount();
+            var picked = all.Where(r => r.선택).Take(UiLayout.ChartItemMax).ToList();
+            if (picked.Count == 0)
+            {
+                ShowEmptyChart();
+                return;
+            }
+
+            using var inner = AppHost.OpenDb();
+            var seriesMap = DashboardMetrics.TrailingMonthlyIssuesByItems(
+                inner, DateTime.Today, picked.Select(r => r.코드).ToList());
+            var plot = DashboardChartBuilder.Build(
+                seriesMap,
+                picked.Select(r => (r.코드, r.품목)).ToList());
+            var gridPaint = new SolidColorPaint(new SKColor(230, 233, 236)) { StrokeThickness = 1 };
+            var combinedLabels = DashboardChartBuilder.CombinedLabels(plot).ToArray();
+            var forecastRows = new List<object>();
+
+            chartHost.Children.Clear();
+            chartHost.Children.Add(new TextBlock
+            {
+                Text = picked.Count == 1
+                    ? $"{picked[0].품목} ({picked[0].코드}) 월별 사용과 예측"
+                    : $"선택한 {picked.Count}개 품목을 품목별 작은 그래프로 봅니다. 품목이 많아도 겹치지 않습니다.",
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4),
+                TextWrapping = TextWrapping.Wrap
+            });
+            chartHost.Children.Add(new TextBlock
+            {
+                Text = "실선·진한 점은 실제 사용, 점선·연한 점은 다음 3개월 예측입니다. 그래프마다 자기 수량 크기로 그려 작은 품목도 잘 보입니다.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brushes.DimGray,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+            if (!string.IsNullOrWhiteSpace(plot.Insight))
+            {
+                chartHost.Children.Add(new Border
                 {
-                    Labels = labels,
-                    Name = "연월",
-                    SeparatorsPaint = gridPaint,
-                    TextSize = 11
-                }
-            ],
-            YAxes =
-            [
-                new Axis
+                    Background = new SolidColorBrush(Color.FromRgb(240, 246, 246)),
+                    Padding = new Thickness(10, 6, 10, 6),
+                    Margin = new Thickness(0, 0, 0, 10),
+                    CornerRadius = new CornerRadius(4),
+                    Child = new TextBlock { Text = plot.Insight, TextWrapping = TextWrapping.Wrap }
+                });
+            }
+
+            var grid = new WrapPanel();
+            for (var i = 0; i < plot.Lines.Count; i++)
+            {
+                var line = plot.Lines[i];
+                var color = palette[i % palette.Length];
+                var actualValues = DashboardChartBuilder.ActualWithGap(line);
+                var forecastValues = DashboardChartBuilder.ForecastWithAnchor(line);
+                var lastActual = line.Actual.Count == 0 ? 0 : line.Actual[^1];
+                var firstForecast = line.Forecast.Count > 0 ? line.Forecast[0] : double.NaN;
+                string trendText;
+                Brush trendBrush;
+                if (double.IsNaN(firstForecast))
                 {
-                    Name = "사용 수량",
-                    MinLimit = 0,
-                    SeparatorsPaint = gridPaint
+                    trendText = "예측 불가(데이터 부족)";
+                    trendBrush = Brushes.DimGray;
                 }
-            ]
-        });
-        Content = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+                else if (DashboardChartBuilder.IsRising(line))
+                {
+                    trendText = $"▲ 다음달 예측 {firstForecast:N0}개";
+                    trendBrush = new SolidColorBrush(Color.FromRgb(176, 58, 46));
+                }
+                else if (DashboardChartBuilder.IsFalling(line))
+                {
+                    trendText = $"▼ 다음달 예측 {firstForecast:N0}개";
+                    trendBrush = new SolidColorBrush(Color.FromRgb(31, 111, 115));
+                }
+                else
+                {
+                    trendText = $"− 다음달 예측 {firstForecast:N0}개 (비슷)";
+                    trendBrush = Brushes.DimGray;
+                }
+
+                var miniSeries = new List<ISeries>
+                {
+                    new LineSeries<double>
+                    {
+                        Name = "실제",
+                        Values = actualValues,
+                        Fill = null,
+                        GeometrySize = 6,
+                        LineSmoothness = 0,
+                        GeometryFill = new SolidColorPaint(color),
+                        GeometryStroke = new SolidColorPaint(new SKColor(255, 255, 255), 1.5f),
+                        Stroke = new SolidColorPaint(color, 2.5f),
+                        YToolTipLabelFormatter = point => $"{point.Coordinate.PrimaryValue:N0}개"
+                    },
+                    new LineSeries<double>
+                    {
+                        Name = "예측",
+                        Values = forecastValues,
+                        Fill = null,
+                        GeometrySize = 6,
+                        LineSmoothness = 0,
+                        GeometryFill = new SolidColorPaint(new SKColor(255, 255, 255)),
+                        GeometryStroke = new SolidColorPaint(color, 1.5f),
+                        Stroke = new SolidColorPaint(color, 2)
+                        {
+                            PathEffect = new LiveChartsCore.SkiaSharpView.Painting.Effects.DashEffect([5, 4])
+                        },
+                        YToolTipLabelFormatter = point => $"{point.Coordinate.PrimaryValue:N0}개(예측)"
+                    }
+                };
+
+                var card = new Border
+                {
+                    Background = Brushes.White,
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(224, 228, 232)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(10, 8, 10, 8),
+                    Margin = new Thickness(0, 0, 10, 10),
+                    Width = 250
+                };
+                var cardStack = new StackPanel();
+                cardStack.Children.Add(new TextBlock
+                {
+                    Text = $"{line.Name} ({line.Code})",
+                    FontWeight = FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 2)
+                });
+                cardStack.Children.Add(new TextBlock
+                {
+                    Text = $"최근 달 {lastActual:N0}개",
+                    Foreground = Brushes.DimGray,
+                    FontSize = 12
+                });
+                cardStack.Children.Add(new TextBlock
+                {
+                    Text = trendText,
+                    Foreground = trendBrush,
+                    FontSize = 12,
+                    Margin = new Thickness(0, 0, 0, 4)
+                });
+                cardStack.Children.Add(new CartesianChart
+                {
+                    Height = 130,
+                    LegendPosition = LiveChartsCore.Measure.LegendPosition.Hidden,
+                    Series = miniSeries,
+                    XAxes = [new Axis { Labels = combinedLabels, SeparatorsPaint = gridPaint, TextSize = 9, LabelsRotation = 0 }],
+                    YAxes = [new Axis { MinLimit = 0, SeparatorsPaint = gridPaint, TextSize = 9 }]
+                });
+                card.Child = cardStack;
+                grid.Children.Add(card);
+
+                string Qty(int index) =>
+                    index < line.Forecast.Count && !double.IsNaN(line.Forecast[index])
+                        ? line.Forecast[index].ToString("N0")
+                        : "—";
+                forecastRows.Add(new
+                {
+                    품목 = line.Name,
+                    코드 = line.Code,
+                    예측1 = Qty(0),
+                    예측2 = Qty(1),
+                    예측3 = Qty(2)
+                });
+            }
+
+            chartHost.Children.Add(grid);
+            chartHost.Children.Add(new TextBlock
+            {
+                Text = "예측 수량",
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 8, 0, 6)
+            });
+            chartHost.Children.Add(TableGrid(forecastRows, ("품목", "품목"), ("코드", "코드"), ("예측+1", "예측1"), ("예측+2", "예측2"), ("예측+3", "예측3")));
+        }
+
+        void OnRowSelectedChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (suppressSelect || e.PropertyName != nameof(ItemRow.선택) || sender is not ItemRow row)
+            {
+                return;
+            }
+
+            if (row.선택 && all.Count(r => r.선택) > UiLayout.ChartItemMax)
+            {
+                suppressSelect = true;
+                row.선택 = false;
+                suppressSelect = false;
+                Alert($"사용 추이는 한 번에 {UiLayout.ChartItemMax}개까지 비교합니다.");
+                return;
+            }
+
+            ShowChart();
+        }
+
+        void Render()
+        {
+            var pages = Math.Max(1, (int)Math.Ceiling(all.Count / (double)UiLayout.PageSize));
+            page = Math.Clamp(page, 1, pages);
+            var slice = all.Skip((page - 1) * UiLayout.PageSize).Take(UiLayout.PageSize).ToList();
+            UpdateSelectionCount();
+            pageText.Text = $"{page}/{pages}";
+            var next = TableGrid(slice,
+                ("품목", nameof(ItemRow.품목)),
+                ("코드", nameof(ItemRow.코드)),
+                ("현재고", nameof(ItemRow.현재고)),
+                ("상태", nameof(ItemRow.상태)));
+            next.IsReadOnly = false;
+            next.CanUserAddRows = false;
+            next.Columns.Insert(0, new DataGridTemplateColumn
+            {
+                Header = "선택",
+                Width = 56,
+                CellTemplate = CheckCell()
+            });
+            next.LoadingRow += (_, e) =>
+            {
+                if (e.Row.Item is ItemRow row && row.Kind is StockStatusKind.OutOfStock)
+                {
+                    e.Row.Background = new SolidColorBrush(Color.FromRgb(252, 235, 233));
+                }
+                else if (e.Row.Item is ItemRow warn && warn.Kind is StockStatusKind.Reorder or StockStatusKind.Expiring)
+                {
+                    e.Row.Background = new SolidColorBrush(Color.FromRgb(255, 244, 224));
+                }
+            };
+            gridHost.Children.Clear();
+            gridHost.Children.Add(next);
+        }
+
+        DataTemplate CheckCell()
+        {
+            var factory = new FrameworkElementFactory(typeof(CheckBox));
+            factory.SetBinding(CheckBox.IsCheckedProperty, new Binding(nameof(ItemRow.선택))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            });
+            factory.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            factory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+            factory.SetValue(UIElement.FocusableProperty, true);
+            factory.AddHandler(CheckBox.ClickEvent, new RoutedEventHandler((sender, _) =>
+            {
+                if (sender is CheckBox box && box.DataContext is ItemRow row)
+                {
+                    row.선택 = box.IsChecked == true;
+                }
+            }));
+            return new DataTemplate { VisualTree = factory };
+        }
+
+        void Reload()
+        {
+            var keep = all.Where(r => r.선택).Select(r => r.코드).ToHashSet();
+            using var inner = AppHost.OpenDb();
+            var innerSvc = new InventoryService(inner, AppHost.Actor);
+            var snaps = innerSvc.SearchStockSnapshots(query.Text.Trim());
+            var shown = filter switch
+            {
+                "out" => snaps.Where(r => r.Status == StockStatusKind.OutOfStock),
+                "reorder" => snaps.Where(r => r.Status == StockStatusKind.Reorder),
+                "unset" => snaps.Where(r => r.Status == StockStatusKind.Unset),
+                "exp" => snaps.Where(r => r.Status == StockStatusKind.Expiring),
+                _ => snaps
+            };
+            suppressSelect = true;
+            all = shown.Select(s =>
+            {
+                var row = new ItemRow
+                {
+                    선택 = keep.Contains(s.Code),
+                    품목 = s.Name,
+                    코드 = s.Code,
+                    현재고 = s.OnHand?.ToString("N3") ?? "미설정",
+                    상태 = StatusKo(s.Status),
+                    Kind = s.Status
+                };
+                row.PropertyChanged += OnRowSelectedChanged;
+                return row;
+            }).ToList();
+            suppressSelect = false;
+            page = 1;
+            Render();
+            ShowChart();
+        }
+
+        var chips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        void Chip(string id, string label) => chips.Children.Add(Btn(label, (_, _) =>
+        {
+            filter = id;
+            Reload();
+        }));
+        Chip("all", "전체");
+        Chip("out", "품절");
+        Chip("reorder", "발주");
+        Chip("unset", "미설정");
+        Chip("exp", "임박");
+
+        var filters = new StackPanel();
+        filters.Children.Add(FormRow(Field("품목", query)));
+        var apply = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        apply.Children.Add(Primary("적용", (_, _) => Reload()));
+        apply.Children.Add(Btn("초기화", (_, _) =>
+        {
+            query.Text = "";
+            filter = "all";
+            Reload();
+        }));
+        apply.Children.Add(Btn("선택 해제", (_, _) =>
+        {
+            suppressSelect = true;
+            foreach (var row in all)
+            {
+                row.선택 = false;
+            }
+
+            suppressSelect = false;
+            Render();
+            ShowChart();
+        }));
+        filters.Children.Add(apply);
+        filters.Children.Add(chips);
+
+        var listBody = new StackPanel();
+        listBody.Children.Add(gridHost);
+        listBody.Children.Add(Pager(count, pageText, () => { page--; Render(); }, () => { page++; Render(); }));
+
+        var root = new StackPanel();
+        root.Children.Add(Section("요약", panel));
+        root.Children.Add(Section("검색·필터", filters));
+        root.Children.Add(Section("품목 목록", listBody));
+        root.Children.Add(Section("품목 사용 추이", chartHost));
+
+        Content = root;
+        Reload();
     }
 
     private Border KpiCard(string label, string value, bool warn = false, bool danger = false, string? open = null)
@@ -246,776 +753,12 @@ public sealed class DashboardView : WorkspaceView
     }
 }
 
-public sealed class ReceiveView : WorkspaceView
-{
-    public ReceiveView()
-    {
-        var date = Date();
-        var supplier = Box();
-        var docNo = Box();
-        var code = Box();
-        var qty = Box("1");
-        var price = Box("0");
-        var lot = Box();
-        var expiry = Date(DateTime.Today.AddDays(180));
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var form = new StackPanel();
-        form.Children.Add(Title("입고 등록"));
-        form.Children.Add(Note("수량·단가·LOT·유효기간을 키보드로 입력하세요. 증빙번호가 같으면 경고만 하고 저장합니다."));
-        form.Children.Add(Row("입고일", date, "공급업체", supplier, "증빙번호", docNo));
-        form.Children.Add(Row("품목코드", code, "수량", qty, "단가", price));
-        form.Children.Add(Row("LOT", lot, "유효기간", expiry));
-        form.Children.Add(Btn("입고 저장", (_, _) =>
-        {
-            status.Text = AppHost.Run((db, svc) =>
-            {
-                int? supplierId = null;
-                if (!string.IsNullOrWhiteSpace(supplier.Text))
-                {
-                    var found = svc.SearchSuppliers(supplier.Text).FirstOrDefault()
-                                ?? svc.CreateSupplier(supplier.Text);
-                    supplierId = found.Id;
-                }
-
-                var doc = svc.Receive(date.SelectedDate ?? DateTime.Today, supplierId, string.IsNullOrWhiteSpace(docNo.Text) ? null : docNo.Text,
-                [
-                    new ReceiptLineRequest
-                    {
-                        ItemCode = code.Text.Trim(),
-                        Quantity = decimal.Parse(qty.Text, CultureInfo.CurrentCulture),
-                        UnitPrice = decimal.Parse(price.Text, CultureInfo.CurrentCulture),
-                        LotNumber = lot.Text.Trim(),
-                        ExpiryDate = expiry.SelectedDate
-                    }
-                ]);
-                return doc.DuplicateWarning
-                    ? "저장됨. 경고: 같은 공급업체·증빙번호 입고가 이미 있습니다."
-                    : $"저장됨. 전표 {doc.Id}";
-            });
-        }));
-        form.Children.Add(status);
-        Content = new ScrollViewer { Content = form };
-    }
-
-    private static StackPanel Row(params object[] parts)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
-        foreach (var part in parts)
-        {
-            if (part is string label)
-            {
-                row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-            }
-            else if (part is UIElement el)
-            {
-                row.Children.Add(el);
-            }
-        }
-
-        return row;
-    }
-}
-
-public sealed class IssueView : WorkspaceView
-{
-    public IssueView()
-    {
-        var date = Date();
-        var dept = Box();
-        var code = Box();
-        var qty = Box("1");
-        var lot = Box();
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var form = new StackPanel();
-        form.Children.Add(Title("사용 등록"));
-        form.Children.Add(Note("재고는 의원 단일 창고입니다. 부서는 사용 기록만 남깁니다. LOT를 비우면 FEFO입니다."));
-        form.Children.Add(ReceiveViewRow(date, dept, code, qty, lot));
-        form.Children.Add(Btn("사용 저장", (_, _) =>
-        {
-            status.Text = AppHost.Run((db, svc) =>
-            {
-                int? deptId = null;
-                if (!string.IsNullOrWhiteSpace(dept.Text))
-                {
-                    var found = svc.SearchDepartments(dept.Text).FirstOrDefault()
-                                ?? svc.CreateDepartment(dept.Text);
-                    deptId = found.Id;
-                }
-
-                var doc = svc.Issue(date.SelectedDate ?? DateTime.Today, deptId,
-                [
-                    new IssueLineRequest
-                    {
-                        ItemCode = code.Text.Trim(),
-                        Quantity = decimal.Parse(qty.Text, CultureInfo.CurrentCulture),
-                        LotNumber = string.IsNullOrWhiteSpace(lot.Text) ? null : lot.Text.Trim()
-                    }
-                ]);
-                return $"저장됨. 전표 {doc.Id}, 원가 스냅샷 {doc.Lines.First().UnitCostSnapshot:N2}";
-            });
-        }));
-        form.Children.Add(status);
-        Content = new ScrollViewer { Content = form };
-    }
-
-    private static StackPanel ReceiveViewRow(DatePicker date, TextBox dept, TextBox code, TextBox qty, TextBox lot)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(new TextBlock { Text = "사용일", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(date);
-        row.Children.Add(new TextBlock { Text = "부서", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(dept);
-        row.Children.Add(new TextBlock { Text = "품목코드", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(code);
-        row.Children.Add(new TextBlock { Text = "수량", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(qty);
-        row.Children.Add(new TextBlock { Text = "LOT(선택)", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(lot);
-        return row;
-    }
-}
-
-public sealed class StockView : WorkspaceView
-{
-    public StockView()
-    {
-        var query = Box();
-        var host = new DockPanel();
-        var top = new StackPanel();
-        top.Children.Add(Title("재고현황"));
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(new TextBlock { Text = "검색", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(query);
-        DataGrid? grid = null;
-        void Reload()
-        {
-            using var db = AppHost.OpenDb();
-            var svc = new InventoryService(db, AppHost.Actor);
-            var rows = svc.SearchStockSnapshots(query.Text.Trim(), take: 400).Select(s => new
-            {
-                품목코드 = s.Code,
-                품목명 = s.Name,
-                현재고 = s.OnHand?.ToString("N3") ?? "미설정",
-                상태 = StatusKo(s.Status),
-                Kind = s.Status
-            }).ToList();
-            var next = GridOf(rows,
-                ("품목코드", "품목코드"),
-                ("품목명", "품목명"),
-                ("현재고", "현재고"),
-                ("상태", "상태"));
-            next.LoadingRow += (_, e) =>
-            {
-                if (e.Row.Item is null)
-                {
-                    return;
-                }
-
-                var kind = e.Row.Item.GetType().GetProperty("Kind")?.GetValue(e.Row.Item);
-                if (kind is StockStatusKind.OutOfStock)
-                {
-                    e.Row.Background = new SolidColorBrush(Color.FromRgb(252, 235, 233));
-                }
-                else if (kind is StockStatusKind.Reorder or StockStatusKind.Expiring)
-                {
-                    e.Row.Background = new SolidColorBrush(Color.FromRgb(255, 244, 224));
-                }
-            };
-            if (grid is null)
-            {
-                grid = next;
-                DockPanel.SetDock(top, Dock.Top);
-                host.Children.Add(top);
-                host.Children.Add(grid);
-            }
-            else
-            {
-                host.Children.Remove(grid);
-                grid = next;
-                host.Children.Add(grid);
-            }
-        }
-
-        row.Children.Add(Btn("조회", (_, _) => Reload()));
-        top.Children.Add(row);
-        Content = host;
-        Reload();
-    }
-
-    private static string StatusKo(StockStatusKind status) => status switch
-    {
-        StockStatusKind.Unset => "미설정",
-        StockStatusKind.Reorder => "발주 권장",
-        StockStatusKind.OutOfStock => "품절",
-        StockStatusKind.Expiring => "유효기간 임박",
-        StockStatusKind.Inactive => "사용중지",
-        _ => "정상"
-    };
-}
-
-public sealed class LedgerView : WorkspaceView
-{
-    public LedgerView()
-    {
-        var idBox = Box();
-        var reason = Box("입력 오류");
-        var adjCode = Box();
-        var adjLot = Box();
-        var adjQty = Box("-1");
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        using var db = AppHost.OpenDb();
-        var svc = new InventoryService(db, AppHost.Actor);
-        var rows = svc.ListDocuments(300).Select(d => new
-        {
-            d.Id,
-            Type = d.Type.ToString(),
-            d.DocumentDate,
-            d.DocumentNo,
-            d.IsCancelled,
-            Lines = d.Lines.Count
-        }).ToList();
-        var panel = new StackPanel();
-        panel.Children.Add(Title("거래내역"));
-        panel.Children.Add(Note("취소는 반대 처리만 합니다. 원 행을 물리 삭제하지 않습니다."));
-        var tools = new StackPanel { Orientation = Orientation.Horizontal };
-        tools.Children.Add(new TextBlock { Text = "전표번호", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        tools.Children.Add(idBox);
-        tools.Children.Add(new TextBlock { Text = "사유", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        tools.Children.Add(reason);
-        tools.Children.Add(Btn("취소", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, s) =>
-            {
-                s.CancelDocument(int.Parse(idBox.Text, CultureInfo.CurrentCulture), reason.Text);
-                return "취소(반대 처리) 완료. 화면을 다시 여세요.";
-            });
-        }));
-        var adj = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 8) };
-        adj.Children.Add(new TextBlock { Text = "조정 품목", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        adj.Children.Add(adjCode);
-        adj.Children.Add(new TextBlock { Text = "LOT", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        adj.Children.Add(adjLot);
-        adj.Children.Add(new TextBlock { Text = "증감", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        adj.Children.Add(adjQty);
-        adj.Children.Add(Btn("반품·폐기·조정", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, s) =>
-            {
-                s.Adjust(
-                    DateTime.Today,
-                    adjCode.Text.Trim(),
-                    adjLot.Text.Trim(),
-                    decimal.Parse(adjQty.Text, CultureInfo.CurrentCulture),
-                    AdjustmentType.Disposal,
-                    reason.Text);
-                return "조정 전표를 저장했습니다. 원 입고 행은 그대로입니다.";
-            });
-        }));
-        panel.Children.Add(tools);
-        panel.Children.Add(adj);
-        panel.Children.Add(status);
-        panel.Children.Add(GridOf(rows));
-        Content = new ScrollViewer { Content = panel };
-    }
-}
-
-public sealed class LotsView : WorkspaceView
-{
-    public LotsView()
-    {
-        var query = Box();
-        var host = new DockPanel();
-        var top = new StackPanel();
-        top.Children.Add(Title("LOT·유효기간"));
-        top.Children.Add(Note("LOT 관리 품목만 기본으로 보여 줍니다. 검색으로 품목코드를 좁히세요."));
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(new TextBlock { Text = "검색", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(query);
-        DataGrid? grid = null;
-        void Reload()
-        {
-            using var db = AppHost.OpenDb();
-            var q = query.Text.Trim();
-            var lots = db.Lots.Where(l => l.Item.LotTracked);
-            if (q.Length > 0)
-            {
-                lots = lots.Where(l => l.Item.Code.Contains(q) || l.Item.Name.Contains(q));
-            }
-
-            var rows = lots
-                .OrderBy(l => l.ExpiryDate)
-                .Take(400)
-                .Select(l => new
-                {
-                    품목코드 = l.Item.Code,
-                    품목명 = l.Item.Name,
-                    LOT = l.LotNumber,
-                    입고일 = l.ReceivedDate,
-                    유효기간 = l.ExpiryDate,
-                    잔량 = l.Quantity
-                })
-                .ToList();
-            var next = GridOf(rows,
-                ("품목코드", "품목코드"),
-                ("품목명", "품목명"),
-                ("LOT", "LOT"),
-                ("입고일", "입고일"),
-                ("유효기간", "유효기간"),
-                ("잔량", "잔량"));
-            if (grid is null)
-            {
-                grid = next;
-                DockPanel.SetDock(top, Dock.Top);
-                host.Children.Add(top);
-                host.Children.Add(grid);
-            }
-            else
-            {
-                host.Children.Remove(grid);
-                grid = next;
-                host.Children.Add(grid);
-            }
-        }
-
-        row.Children.Add(Btn("조회", (_, _) => Reload()));
-        top.Children.Add(row);
-        Content = host;
-        Reload();
-    }
-}
-
-public sealed class ReorderView : WorkspaceView
-{
-    public ReorderView()
-    {
-        using var db = AppHost.OpenDb();
-        var svc = new InventoryService(db, AppHost.Actor);
-        var rows = svc.ReorderItems().Select(i => new { i.Code, i.Name, OnHand = svc.GetOnHand(i.Code), i.MinStock }).ToList();
-        var panel = new StackPanel();
-        panel.Children.Add(Title("발주 필요 품목"));
-        panel.Children.Add(Note("예측·AI가 발주를 자동 확정하지 않습니다. 이 목록은 현재고와 최소재고만 봅니다."));
-        panel.Children.Add(GridOf(rows,
-            ("품목코드", "Code"),
-            ("품목명", "Name"),
-            ("현재고", "OnHand"),
-            ("최소재고", "MinStock")));
-        Content = panel;
-    }
-}
-
-public sealed class StatsView : WorkspaceView
-{
-    public StatsView()
-    {
-        var kind = new ComboBox
-        {
-            ItemsSource = new[] { "일", "월", "분기", "년", "기간지정" },
-            SelectedIndex = 1,
-            MinWidth = 100,
-            Margin = new Thickness(4)
-        };
-        var dimension = new ComboBox
-        {
-            ItemsSource = new[] { "품목", "분류", "부서", "공급업체" },
-            SelectedIndex = 1,
-            MinWidth = 100,
-            Margin = new Thickness(4)
-        };
-        var anchor = Date(DateTime.Today);
-        var customStart = Date(DateTime.Today.AddMonths(-1));
-        var customEnd = Date(DateTime.Today);
-        var customRow = new StackPanel { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
-        var status = new TextBlock { FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8) };
-        IReadOnlyList<ReportRow> current = [];
-        DataGrid? grid = null;
-        var host = new DockPanel();
-        var top = new StackPanel();
-        top.Children.Add(Title("통계·보고서"));
-        top.Children.Add(Note("기본은 이번 달입니다. 2025년 3월과 2026년 3월은 합치지 않습니다."));
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(Label("기간"));
-        row.Children.Add(kind);
-        row.Children.Add(Label("기준일"));
-        row.Children.Add(anchor);
-        row.Children.Add(Label("집계"));
-        row.Children.Add(dimension);
-        customRow.Children.Add(Label("시작"));
-        customRow.Children.Add(customStart);
-        customRow.Children.Add(Label("종료"));
-        customRow.Children.Add(customEnd);
-        kind.SelectionChanged += (_, _) =>
-        {
-            customRow.Visibility = kind.SelectedIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
-        };
-
-        void Reload()
-        {
-            var period = kind.SelectedIndex switch
-            {
-                0 => ReportPeriodKind.Day,
-                2 => ReportPeriodKind.Quarter,
-                3 => ReportPeriodKind.Year,
-                4 => ReportPeriodKind.Custom,
-                _ => ReportPeriodKind.Month
-            };
-            var dim = dimension.SelectedIndex switch
-            {
-                0 => ReportDimension.Item,
-                2 => ReportDimension.Department,
-                3 => ReportDimension.Supplier,
-                _ => ReportDimension.Category
-            };
-            using var db = AppHost.OpenDb();
-            current = ReportAnalytics.Query(
-                db,
-                period,
-                anchor.SelectedDate ?? DateTime.Today,
-                dim,
-                customStart.SelectedDate,
-                customEnd.SelectedDate);
-            if (current.Count == 0)
-            {
-                status.Text = "해당 기간 집계가 없습니다. 기간을 바꿔 조회하세요.";
-            }
-            else
-            {
-                status.Text =
-                    $"{current.First().PeriodLabel} · {current.Count}행 · 사용 {current.Sum(r => r.IssueQty):N3} · 입고 {current.Sum(r => r.ReceiptQty):N3} · 구매 {current.Sum(r => r.PurchaseAmount):N0}원";
-            }
-
-            var next = GridOf(
-                current,
-                (ReportUi.Period, nameof(ReportRow.PeriodLabel)),
-                (ReportUi.Dimension, nameof(ReportRow.Dimension)),
-                (ReportUi.IssueQty, nameof(ReportRow.IssueQty)),
-                (ReportUi.ReceiptQty, nameof(ReportRow.ReceiptQty)),
-                (ReportUi.PurchaseAmount, nameof(ReportRow.PurchaseAmount)));
-            if (grid is null)
-            {
-                grid = next;
-                DockPanel.SetDock(top, Dock.Top);
-                host.Children.Add(top);
-                host.Children.Add(grid);
-            }
-            else
-            {
-                host.Children.Remove(grid);
-                grid = next;
-                host.Children.Add(grid);
-            }
-        }
-
-        row.Children.Add(Btn("조회", (_, _) => Reload()));
-        row.Children.Add(Btn("Excel 내보내기", (_, _) =>
-        {
-            if (current.Count == 0)
-            {
-                status.Text = "먼저 조회하세요.";
-                return;
-            }
-
-            var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "통계보고서.xlsx" };
-            if (dlg.ShowDialog() == true)
-            {
-                ExcelCatalog.ExportReport(current, dlg.FileName);
-                status.Text = "현재 조회 결과를 내보냈습니다.";
-            }
-        }));
-        top.Children.Add(row);
-        top.Children.Add(customRow);
-        top.Children.Add(status);
-        Content = host;
-        Reload();
-    }
-
-    private static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) };
-}
-
-public sealed class CloseView : WorkspaceView
-{
-    public CloseView()
-    {
-        var year = Box(DateTime.Today.Year.ToString(CultureInfo.InvariantCulture));
-        year.MinWidth = 72;
-        var month = Box(DateTime.Today.Month.ToString(CultureInfo.InvariantCulture));
-        month.MinWidth = 48;
-        var reason = Box();
-        reason.MinWidth = 220;
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-        var summary = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
-        var preview = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
-        var panel = new StackPanel();
-        panel.Children.Add(Title("월 마감"));
-        panel.Children.Add(Note("마감하면 해당 월 입고·사용을 저장할 수 없습니다. 해제는 관리자만, 사유가 필요합니다."));
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-        row.Children.Add(new TextBlock { Text = "연도", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(year);
-        row.Children.Add(new TextBlock { Text = "월", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(month);
-        row.Children.Add(Btn("미리보기", (_, _) => Refresh()));
-        panel.Children.Add(row);
-        panel.Children.Add(summary);
-        panel.Children.Add(preview);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        var closeBtn = Btn("마감 확정", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.CloseMonth(int.Parse(year.Text, CultureInfo.InvariantCulture), int.Parse(month.Text, CultureInfo.InvariantCulture));
-                return "마감되었습니다. 해당 월 입고·사용은 저장되지 않습니다.";
-            });
-            Refresh();
-        });
-        closeBtn.FontWeight = FontWeights.SemiBold;
-        var unlockBtn = Btn("마감 해제", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.ReopenMonth(
-                    int.Parse(year.Text, CultureInfo.InvariantCulture),
-                    int.Parse(month.Text, CultureInfo.InvariantCulture),
-                    reason.Text);
-                return "마감이 해제되었습니다.";
-            });
-            Refresh();
-        });
-        unlockBtn.Foreground = new SolidColorBrush(Color.FromRgb(176, 58, 46));
-        unlockBtn.BorderBrush = new SolidColorBrush(Color.FromRgb(176, 58, 46));
-        actions.Children.Add(closeBtn);
-        actions.Children.Add(new TextBlock
-        {
-            Text = "해제 사유 *",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(16, 4, 4, 4)
-        });
-        actions.Children.Add(reason);
-        actions.Children.Add(unlockBtn);
-        panel.Children.Add(actions);
-        panel.Children.Add(status);
-        Content = new ScrollViewer { Content = panel };
-
-        void Refresh()
-        {
-            if (!int.TryParse(year.Text, out var y) || !int.TryParse(month.Text, out var m) || m is < 1 or > 12)
-            {
-                status.Text = "연도와 월을 숫자로 입력하세요.";
-                return;
-            }
-
-            using var db = AppHost.OpenDb();
-            var p = ReportAnalytics.PreviewMonth(db, y, m);
-            summary.Children.Clear();
-            summary.Children.Add(SummaryCard("마감 상태", p.IsClosed ? "마감됨" : "미마감", p.IsClosed));
-            summary.Children.Add(SummaryCard("입고 전표", p.ReceiptDocs.ToString("N0")));
-            summary.Children.Add(SummaryCard("사용 전표", p.IssueDocs.ToString("N0")));
-            summary.Children.Add(SummaryCard("미설정 품목", p.UnsetOpenings.ToString("N0"), p.UnsetOpenings > 0));
-            summary.Children.Add(SummaryCard("음수 LOT", p.NegativeLots.ToString("N0"), p.NegativeLots > 0));
-            preview.Text =
-                $"{y}년 {m}월 수불 미리보기 — 입고 {p.ReceiptQty:N3} · 사용 {p.IssueQty:N3} · 구매 {p.PurchaseAmount:N0}원";
-        }
-
-        Refresh();
-    }
-
-    private static Border SummaryCard(string label, string value, bool warn = false)
-    {
-        var accent = warn
-            ? new SolidColorBrush(Color.FromRgb(196, 123, 22))
-            : new SolidColorBrush(Color.FromRgb(61, 90, 115));
-        var card = new Border
-        {
-            Background = Brushes.White,
-            BorderBrush = warn ? accent : new SolidColorBrush(Color.FromRgb(216, 222, 228)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(12, 10, 12, 10),
-            Margin = new Thickness(0, 0, 10, 10),
-            MinWidth = 120
-        };
-        var stack = new StackPanel();
-        stack.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = Brushes.DimGray });
-        stack.Children.Add(new TextBlock { Text = value, FontSize = 18, FontWeight = FontWeights.SemiBold, Foreground = accent });
-        card.Child = stack;
-        return card;
-    }
-}
-
-public sealed class MastersView : WorkspaceView
-{
-    public MastersView()
-    {
-        var code = Box();
-        var name = Box();
-        var category = Box("소모품");
-        var unit = Box("개");
-        var min = Box("0");
-        var lot = Box("OPEN");
-        var qty = Box("0");
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var panel = new StackPanel();
-        panel.Children.Add(Title("기준정보"));
-        panel.Children.Add(Note("거래가 있는 품목은 삭제할 수 없고 사용중지합니다. 초기재고를 비우면 0이 아니라 미설정입니다."));
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var child in new UIElement[] { Label("코드"), code, Label("이름"), name, Label("분류"), category, Label("단위"), unit, Label("최소"), min })
-        {
-            row.Children.Add(child);
-        }
-
-        panel.Children.Add(row);
-        panel.Children.Add(Btn("품목 등록", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.CreateItem(code.Text.Trim(), name.Text.Trim(), category.Text, unit.Text, unit.Text, decimal.Parse(min.Text, CultureInfo.CurrentCulture));
-                return "품목이 등록되었고 초기재고는 미설정입니다.";
-            });
-        }));
-        var openRow = new StackPanel { Orientation = Orientation.Horizontal };
-        openRow.Children.Add(Label("초기 LOT"));
-        openRow.Children.Add(lot);
-        openRow.Children.Add(Label("수량"));
-        openRow.Children.Add(qty);
-        openRow.Children.Add(Btn("초기재고 입력", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.SaveOpeningDraft(code.Text.Trim(), lot.Text.Trim(), decimal.Parse(qty.Text, CultureInfo.CurrentCulture), DateTime.Today, DateTime.Today.AddDays(365));
-                return "초기재고를 입력 중 상태로 저장했습니다.";
-            });
-        }));
-        openRow.Children.Add(Btn("초기재고 확정", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.ConfirmOpening(code.Text.Trim());
-                return "초기재고를 확정했습니다.";
-            });
-        }));
-        openRow.Children.Add(Btn("사용중지", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.DeactivateItem(code.Text.Trim());
-                return "사용중지했습니다.";
-            });
-        }));
-        panel.Children.Add(openRow);
-        var extra = new StackPanel { Orientation = Orientation.Horizontal };
-        var dept = Box("외래");
-        var supplier = Box();
-        extra.Children.Add(Label("부서"));
-        extra.Children.Add(dept);
-        extra.Children.Add(Btn("부서 추가", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.CreateDepartment(dept.Text);
-                return "부서를 추가했습니다.";
-            });
-        }));
-        extra.Children.Add(Label("공급업체"));
-        extra.Children.Add(supplier);
-        extra.Children.Add(Btn("업체 추가", (_, _) =>
-        {
-            status.Text = AppHost.Run((_, svc) =>
-            {
-                svc.CreateSupplier(supplier.Text);
-                return "공급업체를 추가했습니다.";
-            });
-        }));
-        panel.Children.Add(extra);
-        panel.Children.Add(status);
-        var search = Box();
-        var listHost = new DockPanel { MinHeight = 260 };
-        DataGrid? grid = null;
-        void ReloadItems()
-        {
-            using var db = AppHost.OpenDb();
-            var q = search.Text.Trim();
-            var rows = db.Items
-                .Where(i => q.Length == 0 || i.Code.Contains(q) || i.Name.Contains(q) || i.Category.Contains(q))
-                .OrderBy(i => i.Code)
-                .Take(400)
-                .Select(i => new { i.Code, i.Name, i.Category, i.OpeningStatus, i.IsActive, i.MinStock, i.LotTracked })
-                .ToList();
-            var next = GridOf(rows);
-            if (grid is null)
-            {
-                grid = next;
-                listHost.Children.Add(grid);
-            }
-            else
-            {
-                listHost.Children.Remove(grid);
-                grid = next;
-                listHost.Children.Add(grid);
-            }
-        }
-
-        var searchRow = new StackPanel { Orientation = Orientation.Horizontal };
-        searchRow.Children.Add(Label("검색"));
-        searchRow.Children.Add(search);
-        searchRow.Children.Add(Btn("품목 조회", (_, _) => ReloadItems()));
-        panel.Children.Add(Note("품목이 많으면 검색 후 조회하세요. 한 번에 400행만 보여 줍니다."));
-        panel.Children.Add(searchRow);
-        panel.Children.Add(listHost);
-        Content = new ScrollViewer { Content = panel };
-        ReloadItems();
-    }
-
-    private static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) };
-}
-
-public sealed class UsersView : WorkspaceView
-{
-    public UsersView()
-    {
-        var user = Box();
-        var pass = new PasswordBox { MinWidth = 140, Margin = new Thickness(4) };
-        var role = new ComboBox
-        {
-            ItemsSource = Enum.GetValues<UserRole>(),
-            SelectedItem = UserRole.Viewer,
-            MinWidth = 160,
-            Margin = new Thickness(4)
-        };
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var panel = new StackPanel();
-        panel.Children.Add(Title("사용자·권한"));
-        panel.Children.Add(Note("비밀번호는 해시로만 저장합니다. 평문을 남기지 않습니다."));
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(user);
-        row.Children.Add(pass);
-        row.Children.Add(role);
-        row.Children.Add(Btn("사용자 추가", (_, _) =>
-        {
-            if (AppSession.Current?.Permissions.CanManageUsers != true)
-            {
-                status.Text = "원인: 사용자 관리 권한이 없습니다.\n조치: 관리자에게 요청하세요.";
-                return;
-            }
-
-            status.Text = AppHost.Run((db, _) =>
-            {
-                new AuthenticationService(db).CreateUser(user.Text.Trim(), pass.Password, (UserRole)role.SelectedItem);
-                return "사용자를 추가했습니다.";
-            });
-        }));
-        panel.Children.Add(row);
-        panel.Children.Add(status);
-        using var db = AppHost.OpenDb();
-        panel.Children.Add(GridOf(db.Users.Select(u => new { u.UserName, u.Role, u.IsActive }).ToList()));
-        Content = panel;
-    }
-}
-
 public sealed class BackupView : WorkspaceView
 {
     public BackupView()
     {
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel();
-        panel.Children.Add(Title("백업·복원"));
         panel.Children.Add(Note("복원 전에 현재 DB를 .pre-restore 로 복사합니다. Excel 가져오기는 마스터만 / 마스터+기초 / 전체이력입니다. 빈 수식 행은 거래가 아닙니다. 기초와 이력을 같이 넣으면 이중계산 경고 후 기초는 건너뜁니다."));
         panel.Children.Add(Btn("지금 백업", (_, _) =>
         {
@@ -1049,7 +792,7 @@ public sealed class BackupView : WorkspaceView
         panel.Children.Add(Btn("Excel 가져오기(마스터+기초)", (_, _) => Import(ImportMode.MasterAndOpening, status)));
         panel.Children.Add(Btn("Excel 가져오기(전체이력)", (_, _) => Import(ImportMode.FullHistory, status)));
         panel.Children.Add(status);
-        Content = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Content = Section("백업·엑셀", panel);
     }
 
     private static void Import(ImportMode mode, TextBlock status)
@@ -1087,16 +830,13 @@ public sealed class SettingsView : WorkspaceView
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "SpringClinicInventory",
             "backups")));
+        backup.MaxWidth = 560;
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel();
-        panel.Children.Add(Title("환경설정"));
-        panel.Children.Add(new TextBlock { Text = $"앱 버전 {ProductInfo.DisplayName} {ProductInfo.Version}" });
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(new TextBlock { Text = "유효기간 경고일", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(days);
-        row.Children.Add(new TextBlock { Text = "백업 폴더", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4) });
-        row.Children.Add(backup);
-        row.Children.Add(Btn("저장", (_, _) =>
+        panel.Children.Add(new TextBlock { Text = $"앱 버전 {ProductInfo.DisplayName} {ProductInfo.Version}", Margin = new Thickness(0, 0, 0, 12) });
+        panel.Children.Add(Field("유효기간 경고일", days));
+        panel.Children.Add(Field("백업 폴더", backup));
+        panel.Children.Add(Btn("저장", (_, _) =>
         {
             using var inner = AppHost.OpenDb();
             var s = new SettingsStore(inner);
@@ -1104,7 +844,6 @@ public sealed class SettingsView : WorkspaceView
             s.Set(SettingsStore.BackupFolder, backup.Text.Trim());
             status.Text = "저장했습니다.";
         }));
-        panel.Children.Add(row);
         if (AppSession.Current?.Role == UserRole.Administrator)
         {
             panel.Children.Add(Note("테스트 데이터는 개발·예측 확인용입니다. 운영 의원 DB에서는 만들지 마세요. 기존 거래를 지우지는 않습니다. 품목 약 1만이 이미 있으면 중복 생성하지 않습니다."));
@@ -1119,12 +858,12 @@ public sealed class SettingsView : WorkspaceView
                     return;
                 }
 
-                status.Text = AppHost.Run((db, _) =>
+                status.Text = AppHost.Run((inner, _) =>
                 {
-                    if (db.Items.Count() >= DemoSeedService.DefaultItemCount)
+                    if (inner.Items.Count() >= DemoSeedService.DefaultItemCount)
                     {
                         var dup = MessageBox.Show(
-                            $"이미 품목 {db.Items.Count()}개가 있습니다. 그래도 거래를 추가할까요? 품목은 다시 만들지 않습니다.",
+                            $"이미 품목 {inner.Items.Count()}개가 있습니다. 그래도 거래를 추가할까요? 품목은 다시 만들지 않습니다.",
                             ProductInfo.DisplayName,
                             MessageBoxButton.YesNo,
                             MessageBoxImage.Warning);
@@ -1134,7 +873,7 @@ public sealed class SettingsView : WorkspaceView
                         }
                     }
 
-                    var existing = DemoSeedService.CountBusinessDocuments(db);
+                    var existing = DemoSeedService.CountBusinessDocuments(inner);
                     if (existing >= DemoSeedService.BusyThreshold)
                     {
                         var again = MessageBox.Show(
@@ -1147,10 +886,10 @@ public sealed class SettingsView : WorkspaceView
                             return "테스트 데이터 생성을 취소했습니다.";
                         }
 
-                        return DemoSeedService.Generate(db, DateTime.Today, force: true).Message;
+                        return DemoSeedService.Generate(inner, DateTime.Today, force: true).Message;
                     }
 
-                    return DemoSeedService.Generate(db, DateTime.Today, force: false).Message;
+                    return DemoSeedService.Generate(inner, DateTime.Today, force: false).Message;
                 });
             }));
         }
@@ -1171,6 +910,7 @@ public sealed class SettingsView : WorkspaceView
             {
                 updateBtn.IsEnabled = false;
             }
+
             progressBar.Visibility = Visibility.Visible;
             progressBar.Value = 0;
             status.Text = "업데이트를 준비하는 중...";
@@ -1197,6 +937,7 @@ public sealed class SettingsView : WorkspaceView
                 {
                     updateBtn.IsEnabled = true;
                 }
+
                 if (progressBar.Value < 100)
                 {
                     progressBar.Visibility = Visibility.Collapsed;
@@ -1206,6 +947,6 @@ public sealed class SettingsView : WorkspaceView
         panel.Children.Add(updateBtn);
         panel.Children.Add(progressBar);
         panel.Children.Add(status);
-        Content = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Content = Section("환경설정", panel);
     }
 }

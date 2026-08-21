@@ -102,12 +102,51 @@ public sealed class DemoSeedTests : IDisposable
         var jan = series.Single(s => s.Year == 2026 && s.Month == 1);
         var jul = series.Single(s => s.Year == 2026 && s.Month == 7);
         Assert.NotEqual(jan.Qty, jul.Qty);
+        var lastByItem = db.Items.OrderBy(i => i.Code).Take(20).ToList()
+            .Select(item => DashboardMetrics.TrailingMonthlyIssues(db, today, 13, item.Code)[^1].Qty)
+            .ToList();
+        Assert.True(lastByItem.Distinct().Count() >= 8, "품목별 사용량이 너무 같습니다.");
+        var receiptDays = db.Documents.AsEnumerable()
+            .Where(d => d.Type == DocumentType.Receipt)
+            .Select(d => d.DocumentDate.Day)
+            .Distinct()
+            .Count();
+        Assert.True(receiptDays >= 8, "입고일이 한 날에 몰려 있습니다.");
+        var issueQtys = db.Documents.AsEnumerable()
+            .Where(d => d.Type == DocumentType.Issue)
+            .SelectMany(d => d.Lines)
+            .Select(l => l.Quantity)
+            .Distinct()
+            .Count();
+        Assert.True(issueQtys >= 8, "사용 수량이 너무 같습니다.");
+        var disinfectant = db.Items.Where(i => i.Category == "소독").Select(i => i.Code).Take(8).ToList();
+        var winter = disinfectant.Sum(code => DashboardMetrics.TrailingMonthlyIssues(db, today, 13, code)
+            .Single(s => s.Year == 2026 && s.Month == 1).Qty);
+        var summer = disinfectant.Sum(code => DashboardMetrics.TrailingMonthlyIssues(db, today, 13, code)
+            .Single(s => s.Year == 2026 && s.Month == 7).Qty);
+        Assert.True(winter > summer, "소독 품목은 겨울 사용이 더 많아야 합니다.");
         var forecast = UsageForecast.Predict(series.Select(s => s.Qty).ToList());
         Assert.True(forecast.Available, forecast.Warning);
         var kpi = DashboardMetrics.Build(db, svc, today);
         Assert.True(kpi.ActiveItems >= 5);
         Assert.True(kpi.MonthIssueQty > 0);
         Assert.True(kpi.MonthPurchaseAmount > 0);
+    }
+
+    [Fact]
+    public void Replace_sample_clears_old_transactions_and_varies_again()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var today = new DateTime(2026, 8, 20);
+        Assert.True(DemoSeedService.Generate(db, today, itemCount: 40).Applied);
+        var firstCount = DemoSeedService.CountBusinessDocuments(db);
+        var again = DemoSeedService.ReplaceSample(db, today, itemCount: 40);
+        Assert.True(again.Applied, again.Message);
+        Assert.True(again.DocumentCount > 40);
+        Assert.True(again.DocumentCount < firstCount * 1.8);
+        Assert.True(again.DocumentCount > firstCount * 0.4);
+        Assert.Equal(40, db.Items.Count());
+        Assert.Equal(0, db.Lots.Count(l => l.Quantity < 0));
     }
 
     public void Dispose()

@@ -69,6 +69,54 @@ public static class UpdateChecker
         && !string.IsNullOrWhiteSpace(actualHex)
         && expectedHex.Trim().Equals(actualHex.Trim(), StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsRemoteNewer(string? remoteTag, string currentVersion)
+    {
+        var remote = TryParseVersion(remoteTag);
+        var current = TryParseVersion(currentVersion);
+        return remote is not null && current is not null && remote > current;
+    }
+
+    public static string StatusMessage(LatestReleaseOffer offer, string currentVersion)
+    {
+        if (!offer.Found)
+        {
+            return offer.Message;
+        }
+
+        if (IsRemoteNewer(offer.VersionTag, currentVersion))
+        {
+            return $"새 버전 {offer.VersionTag}가 있습니다. 업데이트를 누르세요. 지금 버전 {currentVersion}.";
+        }
+
+        return $"최신입니다 ({offer.VersionTag}). 재고 업무를 계속하세요.";
+    }
+
+    public static string AfterVelopackNoUpdate(LatestReleaseOffer? offer, string currentVersion)
+    {
+        if (offer is { Found: true } && IsRemoteNewer(offer.VersionTag, currentVersion))
+        {
+            return $"원인: 설치본 피드(releases.win.json)를 찾지 못했습니다. GitHub에는 {offer.VersionTag}가 있습니다.\n조치: Setup.exe를 받아 설치하세요.\n다운로드: {offer.PackageUrl ?? SetupDownloadUrl(offer.VersionTag)}";
+        }
+
+        if (offer is { Found: true })
+        {
+            return $"최신 설치본입니다. GitHub: {offer.VersionTag}\n재고 업무를 계속하세요.";
+        }
+
+        return "새 설치 버전이 없습니다. 재고 업무를 계속하세요.";
+    }
+
+    private static Version? TryParseVersion(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim().TrimStart('v', 'V');
+        return Version.TryParse(trimmed, out var parsed) ? parsed : null;
+    }
+
     public static LatestReleaseOffer ParseLatestRelease(string json, string? sha256Hex = null)
     {
         using var doc = JsonDocument.Parse(json);

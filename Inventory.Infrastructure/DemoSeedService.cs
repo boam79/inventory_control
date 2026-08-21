@@ -80,6 +80,29 @@ public static class DemoSeedService
         return Generate(db, today, force: false, actor: actor, itemCount: itemCount);
     }
 
+    public static DemoSeedResult ReplaceSample(
+        InventoryDbContext db,
+        DateTime today,
+        string actor = "demo-seed",
+        int? itemCount = null)
+    {
+        db.ChangeTracker.Clear();
+        db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = OFF");
+        db.Database.ExecuteSqlRaw("DELETE FROM StockLines");
+        db.Database.ExecuteSqlRaw("DELETE FROM Documents");
+        db.Database.ExecuteSqlRaw("DELETE FROM Lots");
+        db.Database.ExecuteSqlRaw("DELETE FROM MonthCloses");
+        db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = ON");
+        foreach (var item in db.Items.ToList())
+        {
+            item.OpeningStatus = OpeningStatus.Unset;
+        }
+
+        db.SaveChanges();
+        db.ChangeTracker.Clear();
+        return Generate(db, today, force: true, actor: actor, itemCount: itemCount);
+    }
+
     public static DemoSeedResult Generate(
         InventoryDbContext db,
         DateTime today,
@@ -124,40 +147,101 @@ public static class DemoSeedService
         var lots = db.Lots.ToList();
         var remaining = lots.ToDictionary(l => l, l => l.Quantity);
         var lotsByItem = lots.GroupBy(l => l.ItemId).ToDictionary(g => g.Key, g => g.ToList());
-        var documents = new List<StockDocument>(items.Count * 16);
-        var rng = new Random(20260820);
+        var documents = new List<StockDocument>(items.Count * 20);
         var lotSeq = 0;
-        var popular = Math.Min(400, items.Count);
-
-        for (var offset = 0; offset < 13; offset++)
+        foreach (var item in items)
         {
-            var monthStart = start.AddMonths(offset);
-            var days = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
-            for (var i = 0; i < items.Count; i++)
+            var template = TemplateFor(item);
+            var rhythm = Rhythm(item.Code, item.Category);
+            for (var offset = 0; offset < 13; offset++)
             {
-                var item = items[i];
-                var template = Templates[i % Templates.Length];
-                var factor = SeasonalFactor(item.Category, monthStart.Month);
-                var qty = Math.Max(1m, Math.Round(template.MonthlyBase * factor, 0, MidpointRounding.AwayFromZero));
-                var issueDays = i < popular
-                    ? new[] { 5, 12, 20 }
-                    : new[] { Math.Min(12, days) };
-                var each = Math.Max(1m, Math.Round(qty / issueDays.Length, 0, MidpointRounding.AwayFromZero));
-                foreach (var day in issueDays)
+                var monthStart = start.AddMonths(offset);
+                var days = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
+                var monthRng = new Random(StableHash(item.Code) + offset * 997 + monthStart.Year);
+                if (ShouldSkipMonth(rhythm, offset) && offset is not 0 and not 12)
                 {
-                    var date = new DateTime(monthStart.Year, monthStart.Month, Math.Min(day, days));
+                    continue;
+                }
+
+                var qty = MonthIssueQty(rhythm, item.Category, monthStart.Month, offset, monthRng);
+                if (qty < 1m)
+                {
+                    continue;
+                }
+
+                var issueDays = PickDays(monthRng, days, rhythm.Band);
+                var remainingQty = qty;
+                var firstIssueDay = issueDays[0];
+                var receiveLead = 2 + monthRng.Next(9);
+                var receiveDate = new DateTime(monthStart.Year, monthStart.Month, Math.Max(1, firstIssueDay - receiveLead));
+                if (receiveDate > today)
+                {
+                    continue;
+                }
+
+                var price = JitterPrice(template.Price, item.Code, monthRng);
+                var receiveQty = Math.Max(qty, Math.Round(qty * (1.25m + (decimal)monthRng.NextDouble()), 0, MidpointRounding.AwayFromZero));
+                AddReceipt(
+                    receiveDate,
+                    today,
+                    item,
+                    price,
+                    receiveQty,
+                    suppliers[monthRng.Next(suppliers.Count)],
+                    lots,
+                    lotsByItem,
+                    remaining,
+                    documents,
+                    actor,
+                    ref lotSeq);
+                if (rhythm.Band == VolumeBand.Heavy && monthRng.Next(3) == 0)
+                {
+                    var extraDay = Math.Min(days, 14 + monthRng.Next(10));
+                    var extraDate = new DateTime(monthStart.Year, monthStart.Month, extraDay);
+                    if (extraDate <= today && extraDate != receiveDate)
+                    {
+                        AddReceipt(
+                            extraDate,
+                            today,
+                            item,
+                            JitterPrice(template.Price, item.Code + extraDay, monthRng),
+                            Math.Max(4m, Math.Round(qty * 0.35m, 0, MidpointRounding.AwayFromZero)),
+                            suppliers[monthRng.Next(suppliers.Count)],
+                            lots,
+                            lotsByItem,
+                            remaining,
+                            documents,
+                            actor,
+                            ref lotSeq);
+                    }
+                }
+
+                for (var d = 0; d < issueDays.Count; d++)
+                {
+                    var date = new DateTime(monthStart.Year, monthStart.Month, issueDays[d]);
                     if (date > today)
                     {
                         continue;
                     }
 
+                    var leftSlots = issueDays.Count - d;
+                    var each = d == issueDays.Count - 1
+                        ? remainingQty
+                        : Math.Max(1m, Math.Round(remainingQty / leftSlots, 0, MidpointRounding.AwayFromZero));
+                    each = Math.Min(each, remainingQty);
+                    if (each < 1m)
+                    {
+                        continue;
+                    }
+
+                    remainingQty -= each;
                     EnsureStock(
                         date,
                         today,
                         item,
-                        template.Price,
-                        each * 8,
-                        suppliers[rng.Next(suppliers.Count)],
+                        price,
+                        each * 2,
+                        suppliers[monthRng.Next(suppliers.Count)],
                         lots,
                         lotsByItem,
                         remaining,
@@ -168,7 +252,7 @@ public static class DemoSeedService
                         date,
                         item,
                         each,
-                        departments[rng.Next(departments.Count)],
+                        departments[monthRng.Next(departments.Count)],
                         lotsByItem,
                         remaining,
                         documents,
@@ -178,13 +262,13 @@ public static class DemoSeedService
         }
 
         var first = items[0];
-        var firstTemplate = Templates[0];
+        var firstRhythm = Rhythm(first.Code, first.Category);
         AddReceipt(
             today,
             today,
             first,
-            first.ReferencePrice > 0 ? first.ReferencePrice : firstTemplate.Price,
-            Math.Max(8m, firstTemplate.MonthlyBase * 10),
+            first.ReferencePrice > 0 ? first.ReferencePrice : TemplateFor(first).Price,
+            Math.Max(12m, firstRhythm.MonthlyBase),
             suppliers[0],
             lots,
             lotsByItem,
@@ -240,6 +324,131 @@ public static class DemoSeedService
 
     public static decimal SeasonalWinterVsSummer(string category) =>
         SeasonalFactor(category, 1) - SeasonalFactor(category, 7);
+
+    private enum VolumeBand
+    {
+        Heavy,
+        Regular,
+        Occasional,
+        Rare
+    }
+
+    private readonly record struct ItemRhythm(
+        VolumeBand Band,
+        decimal MonthlyBase,
+        decimal Slope,
+        int Phase,
+        int SkipMod);
+
+    private static int StableHash(string value)
+    {
+        unchecked
+        {
+            var hash = 23;
+            foreach (var ch in value)
+            {
+                hash = (hash * 31) + ch;
+            }
+
+            return hash & 0x7fffffff;
+        }
+    }
+
+    private static (string Prefix, string Category, string Spec, decimal Price, decimal MonthlyBase, bool PreferLot) TemplateFor(Item item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.Category))
+        {
+            var byCategory = Templates.FirstOrDefault(t => t.Category == item.Category);
+            if (byCategory.Prefix is not null)
+            {
+                return byCategory;
+            }
+        }
+
+        return Templates[StableHash(item.Code) % Templates.Length];
+    }
+
+    private static ItemRhythm Rhythm(string code, string category)
+    {
+        var hash = StableHash(code + "|" + category);
+        var roll = hash % 100;
+        var band = roll switch
+        {
+            < 5 => VolumeBand.Heavy,
+            < 22 => VolumeBand.Regular,
+            < 65 => VolumeBand.Occasional,
+            _ => VolumeBand.Rare
+        };
+        var monthlyBase = band switch
+        {
+            VolumeBand.Heavy => 80 + (hash % 240),
+            VolumeBand.Regular => 14 + (hash % 52),
+            VolumeBand.Occasional => 3 + (hash % 11),
+            _ => 1 + (hash % 4)
+        };
+        var slope = ((hash / 97) % 17 - 8) * 0.014m;
+        var phase = (int)(hash % 12);
+        var skipMod = band switch
+        {
+            VolumeBand.Rare => 2 + (int)(hash % 3),
+            VolumeBand.Occasional => 6 + (int)(hash % 5),
+            _ => 0
+        };
+        return new ItemRhythm(band, monthlyBase, slope, phase, skipMod);
+    }
+
+    private static bool ShouldSkipMonth(ItemRhythm rhythm, int offset) =>
+        rhythm.SkipMod > 0 && (offset + 3) % rhythm.SkipMod == 0;
+
+    private static decimal MonthIssueQty(ItemRhythm rhythm, string category, int month, int offset, Random rng)
+    {
+        var factor = SeasonalFactor(category, month);
+        var trend = 1m + (offset - 6) * rhythm.Slope;
+        var wave = 1m + ((month + rhythm.Phase) % 6 - 2) * 0.11m;
+        var noise = 0.68m + (decimal)rng.NextDouble() * 0.64m;
+        var spike = (StableHash(category) + offset) % 11 == 0 && rhythm.Band != VolumeBand.Rare
+            ? 1.55m + (rhythm.Phase % 5) * 0.12m
+            : 1m;
+        var qty = Math.Round(rhythm.MonthlyBase * factor * trend * wave * noise * spike, 0, MidpointRounding.AwayFromZero);
+        if (qty < 1m && rhythm.Band != VolumeBand.Rare)
+        {
+            qty = 1m;
+        }
+
+        return Math.Max(0m, qty);
+    }
+
+    private static List<int> PickDays(Random rng, int daysInMonth, VolumeBand band)
+    {
+        var count = band switch
+        {
+            VolumeBand.Heavy => 4 + rng.Next(4),
+            VolumeBand.Regular => 2 + rng.Next(3),
+            VolumeBand.Occasional => 1 + rng.Next(2),
+            _ => 1
+        };
+        count = Math.Clamp(count, 1, Math.Min(8, daysInMonth));
+        var chosen = new SortedSet<int>();
+        var guard = 0;
+        while (chosen.Count < count && guard++ < 40)
+        {
+            chosen.Add(1 + rng.Next(daysInMonth));
+        }
+
+        if (chosen.Count == 0)
+        {
+            chosen.Add(Math.Min(12, daysInMonth));
+        }
+
+        return chosen.ToList();
+    }
+
+    private static decimal JitterPrice(decimal price, string salt, Random rng)
+    {
+        var basePrice = price <= 0 ? 100m : price;
+        var factor = 0.88m + (StableHash(salt) % 25) * 0.01m + (decimal)rng.NextDouble() * 0.06m;
+        return Math.Round(basePrice * factor, 0, MidpointRounding.AwayFromZero);
+    }
 
     private static void EnsureStock(
         DateTime date,
@@ -486,8 +695,9 @@ public static class DemoSeedService
                 continue;
             }
 
-            var template = Templates[Math.Abs(item.Code.GetHashCode()) % Templates.Length];
-            var qty = template.MonthlyBase * 40;
+            var template = TemplateFor(item);
+            var rhythm = Rhythm(item.Code, item.Category);
+            var qty = Math.Max(24m, rhythm.MonthlyBase * (rhythm.Band == VolumeBand.Heavy ? 36 : 28));
             var lots = item.LotTracked ? 2 : 1;
             for (var i = 0; i < lots; i++)
             {

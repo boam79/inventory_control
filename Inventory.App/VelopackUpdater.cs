@@ -1,5 +1,6 @@
 using Inventory.Core;
 using Inventory.Infrastructure;
+using System.Diagnostics;
 using System.Net.Http;
 using Velopack;
 using Velopack.Sources;
@@ -19,7 +20,7 @@ internal static class VelopackUpdater
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
             var offer = await UpdateChecker.InspectLatestAsync(client);
-            return offer.Message;
+            return UpdateChecker.StatusMessage(offer, ProductInfo.Version);
         }
         catch (Exception ex)
         {
@@ -72,12 +73,14 @@ internal static class VelopackUpdater
 
             if (info is null)
             {
-                if (offer is { Found: true })
+                if (offer is { Found: true }
+                    && UpdateChecker.IsRemoteNewer(offer.VersionTag, ProductInfo.Version)
+                    && !string.IsNullOrWhiteSpace(offer.PackageUrl))
                 {
-                    return $"새 설치 버전이 없습니다. GitHub 최신: {offer.VersionTag}\n다운로드: {offer.PackageUrl}\n재고 업무를 계속하세요.";
+                    return await LaunchVerifiedSetupAsync(offer, progress);
                 }
 
-                return "새 설치 버전이 없습니다. 재고 업무를 계속하세요.";
+                return UpdateChecker.AfterVelopackNoUpdate(offer, ProductInfo.Version);
             }
 
             progress?.Report("업데이트 전 데이터베이스를 백업하는 중...");
@@ -152,6 +155,48 @@ internal static class VelopackUpdater
 
     private static string NotInstalledOrInitFailed(Exception ex, LatestReleaseOffer? offer) =>
         $"원인: 업데이트 구성을 시작하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·사용은 계속하세요. 설치본에서만 자동 업데이트됩니다.\n다운로드: {offer?.PackageUrl ?? UpdateChecker.ReleasesUrl}";
+
+    private static async Task<string> LaunchVerifiedSetupAsync(LatestReleaseOffer offer, IProgress<string>? progress)
+    {
+        if (offer is { HashRequired: true } && string.IsNullOrWhiteSpace(offer.Sha256Hex))
+        {
+            return "원인: 해시 파일을 확인하지 못했습니다.\n조치: 패키지를 적용하지 않습니다. 입고·사용은 계속하세요.\n"
+                   + UpdateChecker.AfterVelopackNoUpdate(offer, ProductInfo.Version);
+        }
+
+        BackupBeforeUpdate();
+        progress?.Report($"설치 파일 {offer.VersionTag}을 받는 중...");
+        var stage = StagingFolder();
+        var marker = global::System.IO.Path.Combine(stage, "current.marker");
+        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
+        var expectedHash = offer.Sha256Hex ?? "";
+        if (string.IsNullOrWhiteSpace(expectedHash))
+        {
+            return UpdateChecker.AfterVelopackNoUpdate(offer, ProductInfo.Version);
+        }
+
+        var verified = await UpdateChecker.DownloadVerifyAndStageAsync(
+            client,
+            new Uri(offer.PackageUrl!),
+            expectedHash,
+            AppHost.DatabasePath,
+            stage,
+            marker);
+        if (!verified.Applied || string.IsNullOrWhiteSpace(verified.StagedPath))
+        {
+            return verified.Message + "\n" + UpdateChecker.AfterVelopackNoUpdate(offer, ProductInfo.Version);
+        }
+
+        var setupPath = global::System.IO.Path.Combine(stage, UpdateChecker.SetupFileName);
+        global::System.IO.File.Copy(verified.StagedPath, setupPath, overwrite: true);
+        progress?.Report("설치 프로그램을 실행합니다...");
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = setupPath,
+            UseShellExecute = true
+        });
+        return $"{offer.VersionTag} 설치 프로그램을 실행했습니다. 안내가 끝나면 프로그램을 다시 여세요.";
+    }
 
     private static void BackupBeforeUpdate()
     {

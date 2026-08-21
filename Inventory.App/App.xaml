@@ -3,70 +3,101 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="LoginWindow.xaml">
     <Application.Resources>
-        <SolidColorBrush x:Key="ClinicHeaderBrush" Color="#2F3E4D"/>
-        <SolidColorBrush x:Key="ClinicHeaderChipBrush" Color="#3D5164"/>
-        <SolidColorBrush x:Key="ClinicCanvasBrush" Color="#EEF1F4"/>
-        <SolidColorBrush x:Key="ClinicMenuBrush" Color="#F7F8FA"/>
-        <SolidColorBrush x:Key="ClinicLineBrush" Color="#D8DEE4"/>
-        <SolidColorBrush x:Key="ClinicSelectBrush" Color="#D9E4EE"/>
-        <SolidColorBrush x:Key="ClinicAccentBrush" Color="#3D5A73"/>
-        <SolidColorBrush x:Key="ClinicDangerBrush" Color="#B03A2E"/>
+        <SolidColorBrush x:Key="ClinicHeaderBrush" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="ClinicHeaderChipBrush" Color="#E8EEF0"/>
+        <SolidColorBrush x:Key="ClinicCanvasBrush" Color="#F3F5F6"/>
+        <SolidColorBrush x:Key="ClinicMenuBrush" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="ClinicLineBrush" Color="#E2E8EA"/>
+        <SolidColorBrush x:Key="ClinicSelectBrush" Color="#D7E8E8"/>
+        <SolidColorBrush x:Key="ClinicAccentBrush" Color="#1F6F73"/>
+        <SolidColorBrush x:Key="ClinicDangerBrush" Color="#C0392B"/>
         <SolidColorBrush x:Key="ClinicWarnBrush" Color="#C47B16"/>
         <SolidColorBrush x:Key="ClinicWarnSoftBrush" Color="#FFF4E0"/>
         <Style TargetType="Button">
-            <Setter Property="Padding" Value="12,5"/>
-            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Padding" Value="16,7"/>
+            <Setter Property="MinHeight" Value="32"/>
             <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#C5CDD5"/>
+            <Setter Property="Foreground" Value="#1F6F73"/>
+            <Setter Property="BorderBrush" Value="#1F6F73"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#1F6F73"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#1F6F73"/>
+        </Style>
+        <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#EEF1F2"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="BorderBrush" Value="#D5DCE0"/>
+        </Style>
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#C0392B"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#C0392B"/>
+        </Style>
+        <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Margin" Value="0,0,8,8"/>
+            <Setter Property="MinWidth" Value="72"/>
+        </Style>
+        <Style x:Key="NavButtonActive" TargetType="Button" BasedOn="{StaticResource NavButton}">
+            <Setter Property="Background" Value="#1F6F73"/>
+            <Setter Property="Foreground" Value="White"/>
         </Style>
         <Style x:Key="HeaderChip" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource ClinicHeaderChipBrush}"/>
             <Setter Property="Padding" Value="10,5"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
         <Style x:Key="HeaderText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="#334155"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontSize" Value="13"/>
         </Style>
-        <Style x:Key="ShellMenuList" TargetType="ListBox">
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding" Value="8,10"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-            <Setter Property="ItemContainerStyle">
-                <Setter.Value>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Padding" Value="10,8"/>
-                        <Setter Property="Margin" Value="0,0,0,4"/>
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                        <Setter Property="Background" Value="Transparent"/>
-                        <Setter Property="BorderThickness" Value="0"/>
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="ListBoxItem">
-                                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                            CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                        <ContentPresenter/>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="#D9E4EE"/>
-                                            <Setter TargetName="Bd" Property="BorderBrush" Value="#3D5A73"/>
-                                            <Setter TargetName="Bd" Property="BorderThickness" Value="3,0,0,0"/>
-                                        </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="#E8EEF3"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </Setter.Value>
-            </Setter>
+        <Style TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="CanUserAddRows" Value="False"/>
+            <Setter Property="CanUserDeleteRows" Value="False"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="BorderBrush" Value="#E2E8EA"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="RowHeight" Value="36"/>
+            <Setter Property="ColumnHeaderHeight" Value="34"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="AlternatingRowBackground" Value="#F8FAFA"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#EEF2F3"/>
+            <Setter Property="EnableRowVirtualization" Value="True"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="BorderBrush" Value="#D5DCE0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="MinHeight" Value="32"/>
+        </Style>
+        <Style TargetType="DatePicker">
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="MinHeight" Value="32"/>
         </Style>
     </Application.Resources>
 </Application>

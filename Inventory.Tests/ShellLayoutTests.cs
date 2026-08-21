@@ -1,0 +1,135 @@
+using Inventory.Core;
+
+namespace Inventory.Tests;
+
+public class ShellLayoutTests
+{
+    [Fact]
+    public void Every_menu_tag_has_a_korean_page_title()
+    {
+        Assert.NotEmpty(ShellPages.MenuTags);
+        foreach (var tag in ShellPages.MenuTags)
+        {
+            var title = ShellPages.Title(tag);
+            Assert.False(string.IsNullOrWhiteSpace(title));
+            Assert.DoesNotContain("PeriodLabel", title, StringComparison.Ordinal);
+            Assert.DoesNotContain("OpeningStatus", title, StringComparison.Ordinal);
+        }
+
+        Assert.Equal("대시보드", ShellPages.Title("dashboard"));
+        Assert.Equal("입고", ShellPages.Title("receive"));
+        Assert.Equal("재고현황", ShellPages.Title("stock"));
+        Assert.Equal("입고", ShellPages.NavLabel("receive"));
+        Assert.Equal("재고", ShellPages.NavLabel("stock"));
+        Assert.Equal("대시보드", ShellPages.NavLabel("dashboard"));
+        Assert.DoesNotContain("lots", ShellPages.MenuTags);
+        Assert.DoesNotContain("close", ShellPages.MenuTags);
+        Assert.DoesNotContain("masters", ShellPages.MenuTags);
+        Assert.DoesNotContain("lots", ShellPages.NavOrder);
+        Assert.DoesNotContain("close", ShellPages.NavOrder);
+        Assert.DoesNotContain("masters", ShellPages.NavOrder);
+    }
+
+    [Fact]
+    public void Lists_keep_a_readable_table_height()
+    {
+        Assert.Equal(50, UiLayout.PageSize);
+        Assert.Equal(8, UiLayout.ChartItemMax);
+        Assert.True(UiLayout.ListMaxHeight >= 300);
+        Assert.True(UiLayout.ListMaxHeight <= 480);
+    }
+
+    [Fact]
+    public void Main_window_uses_top_nav_and_page_title()
+    {
+        var xaml = ReadRepoFile("Inventory.App", "MainWindow.xaml");
+        Assert.Contains("x:Name=\"PageTitle\"", xaml);
+        Assert.Contains("x:Name=\"NavPanel\"", xaml);
+        Assert.DoesNotContain("x:Name=\"MenuList\"", xaml);
+        var titleAt = xaml.IndexOf("x:Name=\"PageTitle\"", StringComparison.Ordinal);
+        var scrollAt = xaml.IndexOf("<ScrollViewer", StringComparison.Ordinal);
+        Assert.True(titleAt >= 0);
+        Assert.True(scrollAt < 0 || titleAt < scrollAt);
+    }
+
+    [Fact]
+    public void Dashboard_is_item_table_and_removed_screens_are_gone()
+    {
+        var workspace = ReadRepoFile("Inventory.App", "Views", "WorkspaceViews.cs");
+        Assert.Contains("품목 목록", workspace, StringComparison.Ordinal);
+        Assert.Contains("품목 사용 추이", workspace, StringComparison.Ordinal);
+        Assert.Contains("nameof(ItemRow.선택)", workspace, StringComparison.Ordinal);
+        Assert.Contains("ChartItemMax", workspace, StringComparison.Ordinal);
+        Assert.Contains("예측 수량", workspace, StringComparison.Ordinal);
+        Assert.Contains("겹치지 않습니다", workspace, StringComparison.Ordinal);
+        Assert.Contains("ReplaceSample", workspace, StringComparison.Ordinal);
+        Assert.Contains("LineSeries<double>", workspace, StringComparison.Ordinal);
+        Assert.Contains("GeometrySize = 6", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("GeometrySize = 0", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColumnSeries<double>", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("Section(\"품목 등록\"", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("class CloseView", workspace, StringComparison.Ordinal);
+
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        Assert.DoesNotContain("class LotsView", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("class MastersView", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("class LedgerView", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("class ReorderView", forms, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Reorder_and_ledger_menus_are_removed_but_cancel_stays_available()
+    {
+        Assert.DoesNotContain("reorder", ShellPages.MenuTags);
+        Assert.DoesNotContain("ledger", ShellPages.MenuTags);
+        Assert.DoesNotContain("reorder", ShellPages.NavOrder);
+        Assert.DoesNotContain("ledger", ShellPages.NavOrder);
+
+        var mainWindow = ReadRepoFile("Inventory.App", "MainWindow.xaml.cs");
+        Assert.DoesNotContain("Views.LedgerView", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Views.ReorderView", mainWindow, StringComparison.Ordinal);
+
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        Assert.Contains("CancelDocument", forms, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Stock_screen_is_a_filter_and_table()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        Assert.Contains("TableGrid", forms, StringComparison.Ordinal);
+        Assert.Contains("검색·필터", forms, StringComparison.Ordinal);
+        Assert.Contains("nameof(StockRow.현재고)", forms, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Recent_documents_show_item_name_and_expired_lots_are_flagged()
+    {
+        // Found via user-story QA: cancelling a receipt/issue required knowing its item,
+        // but the recent-document lists only showed date/doc id/line count, not the item.
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        Assert.Contains("품목 = d.LineCount > 1 ? $\"{d.FirstItemName} 등 {d.LineCount}건\" : d.FirstItemName ?? \"—\"", forms, StringComparison.Ordinal);
+        Assert.Contains("(\"품목\", \"품목\")", forms, StringComparison.Ordinal);
+
+        // Already-expired lots (음수 남은일) were listed with no visual flag.
+        Assert.Contains("IsExpired = days is not null && days < 0", forms, StringComparison.Ordinal);
+        Assert.Contains("class LotRow", forms, StringComparison.Ordinal);
+    }
+
+    private static string ReadRepoFile(params string[] parts)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(new[] { dir.FullName }.Concat(parts).ToArray());
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate);
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new FileNotFoundException(string.Join(Path.DirectorySeparatorChar, parts));
+    }
+}

@@ -5,43 +5,43 @@
         Height="768" Width="1366"
         MinHeight="600" MinWidth="1100"
         WindowStartupLocation="CenterScreen"
-        Background="#EEF1F4">
+        Background="#F3F5F6">
     <DockPanel>
-        <Border DockPanel.Dock="Top" Padding="14,10" Background="#2F3E4D">
+        <Border DockPanel.Dock="Top" Padding="28,18,28,12" Background="White"
+                BorderBrush="#E2E8EA" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <WrapPanel VerticalAlignment="Center">
-                    <Border Style="{StaticResource HeaderChip}">
-                        <TextBlock x:Name="UserLabel" Style="{StaticResource HeaderText}"/>
-                    </Border>
-                    <Border Style="{StaticResource HeaderChip}">
-                        <TextBlock x:Name="PeriodLabel" Style="{StaticResource HeaderText}"/>
-                    </Border>
-                    <Border x:Name="AlertChip" Style="{StaticResource HeaderChip}" MaxWidth="520">
-                        <TextBlock x:Name="AlertLabel" Style="{StaticResource HeaderText}" TextWrapping="Wrap"/>
-                    </Border>
-                    <Border Style="{StaticResource HeaderChip}">
-                        <TextBlock x:Name="VersionLabel" Style="{StaticResource HeaderText}"/>
-                    </Border>
-                </WrapPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="UpdateButton" Content="업데이트"
-                            Padding="14,6" Margin="0,0,8,0" Click="Update_Click"/>
-                    <Button x:Name="LogoutButton" Content="로그아웃"
-                            Padding="14,6" Click="Logout_Click"/>
+                <StackPanel VerticalAlignment="Top">
+                    <TextBlock x:Name="PageTitle" FontSize="28" FontWeight="Bold"
+                               Foreground="#1A2330" Text="재고현황"/>
+                    <TextBlock x:Name="PageHint" Margin="0,4,0,0" FontSize="13"
+                               Foreground="#6B7A86" Text="로컬 · 오프라인"/>
+                    <WrapPanel Margin="0,8,0,0">
+                        <TextBlock x:Name="UserLabel" FontSize="12" Foreground="#6B7A86" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="PeriodLabel" FontSize="12" Foreground="#6B7A86" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="VersionLabel" FontSize="12" Foreground="#6B7A86"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="AlertLabel" Margin="0,6,0,0" FontSize="12"
+                               Foreground="#1F6F73" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                    <WrapPanel x:Name="NavPanel" HorizontalAlignment="Right" MaxWidth="640"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <Button x:Name="UpdateButton" Content="업데이트" Style="{StaticResource GhostButton}"
+                                Margin="0,0,8,0" Click="Update_Click"/>
+                        <Button x:Name="LogoutButton" Content="로그아웃" Style="{StaticResource GhostButton}"
+                                Click="Logout_Click"/>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>
-        <Border DockPanel.Dock="Left" Background="#F7F8FA" BorderBrush="#D8DEE4" BorderThickness="0,0,1,0">
-            <ListBox x:Name="MenuList" Style="{StaticResource ShellMenuList}"
-                     SelectionChanged="MenuList_SelectionChanged"/>
-        </Border>
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                      Background="#EEF1F4">
-            <ContentControl x:Name="MainContent" Margin="16" MinWidth="900"/>
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto" Background="#F3F5F6">
+            <ContentControl x:Name="MainContent" Margin="28,16,28,20"
+                            HorizontalAlignment="Stretch" VerticalAlignment="Top"/>
         </ScrollViewer>
     </DockPanel>
 </Window>

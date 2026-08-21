@@ -1,6 +1,5 @@
 ﻿using Inventory.Core;
 using Inventory.Infrastructure;
-using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -11,8 +10,6 @@ namespace Inventory.App;
 public partial class MainWindow : Window
 {
     private string? _seedNote;
-
-    private readonly HashSet<string> _collapsedGroups = ["trace", "analyze", "admin"];
     private string _selectedMenu = "dashboard";
 
     public MainWindow()
@@ -22,135 +19,65 @@ public partial class MainWindow : Window
         MinHeight = UiLayout.MinHeight;
         Width = UiLayout.DesignWidth;
         Height = UiLayout.DesignHeight;
-        MenuList.Width = UiLayout.MenuWidth;
         var session = AppSession.Current;
         UserLabel.Text = session is null
             ? "사용자 없음"
             : $"{session.UserName} ({session.Role})";
         PeriodLabel.Text = $"기준연월 {DateTime.Today:yyyy년 M월}";
         VersionLabel.Text = $"버전 {ProductInfo.Version}";
-        AlertLabel.Text = "알림 없음";
-        BuildMenu();
+        AlertLabel.Text = "";
+        PageTitle.Text = ShellPages.Title(_selectedMenu);
+        PageHint.Text = "로컬 · 오프라인";
+        BuildNav();
         Loaded += MainWindow_Loaded;
     }
 
-    private void BuildMenu()
+    private void BuildNav()
     {
-        MenuList.Items.Clear();
-        AddGroup("home", "홈·현황", ("dashboard", "대시보드"), ("stock", "재고현황"), ("reorder", "발주 필요 품목"));
-        AddGroup("ops", "일상 입출고", ("receive", "입고 등록"), ("issue", "사용 등록"));
-        AddGroup("trace", "추적", ("ledger", "거래내역"), ("lots", "LOT·유효기간"));
-        AddGroup("analyze", "분석·마감", ("stats", "통계·보고서"), ("close", "월 마감"));
-        AddGroup("admin", "관리", ("masters", "기준정보"), ("users", "사용자·권한"), ("backup", "백업·복원"), ("settings", "환경설정"));
-        SelectMenuItem(_selectedMenu);
-    }
-
-    private void AddGroup(string id, string title, params (string Tag, string Title)[] items)
-    {
-        var expanded = !_collapsedGroups.Contains(id);
-        var header = new ListBoxItem
+        var flags = AppSession.Current?.Permissions ?? RolePermissions.For(UserRole.Viewer);
+        if (!ShellPages.CanSee(_selectedMenu, flags))
         {
-            Tag = "group:" + id,
-            Content = (expanded ? "▾  " : "▸  ") + title,
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(Color.FromRgb(90, 104, 118)),
-            Padding = new Thickness(6, 10, 6, 4)
-        };
-        header.PreviewMouseLeftButtonDown += (_, e) =>
-        {
-            if (_collapsedGroups.Contains(id))
-            {
-                _collapsedGroups.Remove(id);
-            }
-            else
-            {
-                _collapsedGroups.Add(id);
-            }
-
-            e.Handled = true;
-            BuildMenu();
-        };
-        MenuList.Items.Add(header);
-        if (!expanded)
-        {
-            return;
+            _selectedMenu = "dashboard";
         }
 
-        foreach (var item in items)
+        NavPanel.Children.Clear();
+        foreach (var tag in ShellPages.NavOrder.Where(t => ShellPages.CanSee(t, flags)))
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(MenuIcon(item.Tag));
-            row.Children.Add(new TextBlock
+            var capture = tag;
+            var button = new Button
             {
-                Text = item.Title,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 13
-            });
-            MenuList.Items.Add(new ListBoxItem { Tag = item.Tag, Content = row });
+                Content = ShellPages.NavLabel(capture),
+                Tag = capture,
+                Style = (Style)FindResource("NavButton")
+            };
+            button.Click += (_, _) => OpenMenu(capture);
+            NavPanel.Children.Add(button);
+        }
+
+        HighlightNav();
+    }
+
+    private void HighlightNav()
+    {
+        foreach (var child in NavPanel.Children)
+        {
+            if (child is Button button)
+            {
+                var active = button.Tag as string == _selectedMenu;
+                button.Style = (Style)FindResource(active ? "NavButtonActive" : "NavButton");
+            }
         }
     }
 
-    public void OpenMenu(string tag)
+    public void OpenMenu(string tag, bool force = false)
     {
+        var same = !force && tag == _selectedMenu && MainContent.Content is not TextBlock and not null;
         _selectedMenu = tag;
-        if (tag is "ledger" or "lots")
+        HighlightNav();
+        if (!same)
         {
-            _collapsedGroups.Remove("trace");
+            ShowPage(tag);
         }
-        else if (tag is "stats" or "close")
-        {
-            _collapsedGroups.Remove("analyze");
-        }
-        else if (tag is "masters" or "users" or "backup" or "settings")
-        {
-            _collapsedGroups.Remove("admin");
-        }
-
-        BuildMenu();
-    }
-
-    private void SelectMenuItem(string tag)
-    {
-        foreach (var obj in MenuList.Items)
-        {
-            if (obj is ListBoxItem item && item.Tag as string == tag)
-            {
-                MenuList.SelectedItem = item;
-                return;
-            }
-        }
-    }
-
-    private static System.Windows.Shapes.Path MenuIcon(string tag)
-    {
-        var data = tag switch
-        {
-            "dashboard" => "M2,2 H7 V7 H2 Z M9,2 H14 V7 H9 Z M2,9 H7 V14 H2 Z M9,9 H14 V14 H9 Z",
-            "receive" => "M3,2 H13 V9 H10 L8,13 L6,9 H3 Z",
-            "issue" => "M6,3 L10,3 L10,8 L13,8 L8,14 L3,8 L6,8 Z",
-            "stock" => "M2,4 L8,2 L14,4 L14,12 L8,14 L2,12 Z",
-            "ledger" => "M3,2 H13 V14 H3 Z M5,5 H11 M5,8 H11 M5,11 H9",
-            "lots" => "M2,5 H14 V13 H2 Z M5,5 V3 H11 V5",
-            "reorder" => "M3,12 L8,3 L13,12 Z",
-            "stats" => "M3,12 V8 H5 V12 Z M7,12 V4 H9 V12 Z M11,12 V6 H13 V12 Z",
-            "close" => "M3,3 H13 V13 H3 Z M3,6 H13",
-            "masters" => "M4,3 H12 V5 H4 Z M4,7 H12 V9 H4 Z M4,11 H10 V13 H4 Z",
-            "users" => "M8,2 A3,3 0 1 1 7.99,2 Z M3,14 Q8,9 13,14",
-            "backup" => "M4,3 H12 V8 H9 L8,11 L7,8 H4 Z",
-            "settings" => "M6,2 H10 V6 H14 V10 H10 V14 H6 V10 H2 V6 H6 Z",
-            _ => "M2,2 H14 V14 H2 Z"
-        };
-        return new System.Windows.Shapes.Path
-        {
-            Data = Geometry.Parse(data),
-            Fill = new SolidColorBrush(Color.FromRgb(70, 90, 108)),
-            Width = 14,
-            Height = 14,
-            Stretch = Stretch.Uniform,
-            Margin = new Thickness(0, 0, 8, 0),
-            VerticalAlignment = VerticalAlignment.Center
-        };
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -228,20 +155,13 @@ public partial class MainWindow : Window
 
     private void SetAlert(string message, bool isWarning)
     {
-        AlertLabel.Text = string.IsNullOrWhiteSpace(message) ? "알림 없음" : message;
-        if (isWarning)
-        {
-            AlertChip.Background = new SolidColorBrush(Color.FromRgb(92, 68, 32));
-            AlertLabel.Foreground = new SolidColorBrush(Color.FromRgb(255, 214, 140));
-        }
-        else
-        {
-            AlertChip.Background = (Brush)FindResource("ClinicHeaderChipBrush");
-            AlertLabel.Foreground = Brushes.White;
-        }
+        AlertLabel.Text = string.IsNullOrWhiteSpace(message) ? "" : message;
+        AlertLabel.Foreground = isWarning
+            ? new SolidColorBrush(Color.FromRgb(196, 123, 22))
+            : new SolidColorBrush(Color.FromRgb(31, 111, 115));
     }
 
-    public void ShowDashboard() => OpenMenu("dashboard");
+    public void ShowDashboard() => OpenMenu("dashboard", force: true);
 
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
@@ -281,36 +201,37 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private void MenuList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ShowPage(string tag)
     {
-        if (MenuList.SelectedItem is not ListBoxItem item)
+        PageTitle.Text = ShellPages.Title(tag);
+        PageHint.Text = string.IsNullOrWhiteSpace(ShellPages.Hint(tag)) ? "로컬 · 오프라인" : ShellPages.Hint(tag);
+        MainContent.Content = new TextBlock
         {
-            return;
-        }
-
-        var tag = item.Tag as string ?? string.Empty;
-        if (tag.StartsWith("group:", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _selectedMenu = tag;
-        MainContent.Content = tag switch
-        {
-            "dashboard" => new Views.DashboardView(),
-            "receive" => new Views.ReceiveView(),
-            "issue" => new Views.IssueView(),
-            "stock" => new Views.StockView(),
-            "ledger" => new Views.LedgerView(),
-            "lots" => new Views.LotsView(),
-            "reorder" => new Views.ReorderView(),
-            "stats" => new Views.StatsView(),
-            "close" => new Views.CloseView(),
-            "masters" => new Views.MastersView(),
-            "users" => new Views.UsersView(),
-            "backup" => new Views.BackupView(),
-            "settings" => new Views.SettingsView(),
-            _ => new TextBlock { Text = tag }
+            Text = "불러오는 중...",
+            FontSize = 14,
+            Foreground = new SolidColorBrush(Color.FromRgb(107, 122, 134)),
+            Margin = new Thickness(4, 8, 0, 0)
         };
+        var captured = tag;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_selectedMenu != captured)
+            {
+                return;
+            }
+
+            MainContent.Content = captured switch
+            {
+                "dashboard" => new Views.DashboardView(),
+                "receive" => new Views.ReceiveView(),
+                "issue" => new Views.IssueView(),
+                "stock" => new Views.StockView(),
+                "stats" => new Views.StatsView(),
+                "users" => new Views.UsersView(),
+                "backup" => new Views.BackupView(),
+                "settings" => new Views.SettingsView(),
+                _ => new TextBlock { Text = captured }
+            };
+        }, System.Windows.Threading.DispatcherPriority.Background);
     }
 }

@@ -174,6 +174,10 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Contains(db.Documents, d => d.Type == DocumentType.Reversal);
         Assert.Equal(1m, svc.GetOnHand("M001"));
         Assert.Equal(0m, svc.LotsForItem("M001").Single(l => l.LotNumber == "L4").Quantity);
+
+        var summary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
+        Assert.Equal("주사기", summary.FirstItemName);
+        Assert.True(summary.IsCancelled);
     }
 
     [Fact]

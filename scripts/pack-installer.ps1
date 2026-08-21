@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.4"
+    [string]$Version = "1.0.17"
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,4 +54,8 @@ Set-Content -Path $hashFile -Value "$hash  $($setup.Name)" -Encoding ascii
 Write-Host "Installer: $($setup.FullName)"
 Write-Host "SHA256: $hash"
 Write-Host "Hash file: $hashFile"
+Write-Host "Velopack feed (must upload to GitHub Release or in-app update finds nothing):"
+Get-ChildItem $DistDir -Filter "releases.win.json" | ForEach-Object { Write-Host "  $($_.FullName)" }
+Get-ChildItem $DistDir -Filter "assets.win.json" | ForEach-Object { Write-Host "  $($_.FullName)" }
+Write-Host "Upload with Setup.exe, nupkg, RELEASES, releases.win.json, assets.win.json, sha256."
 Write-Host "Unsigned build: Windows SmartScreen may warn. Code signing certificate was not used."

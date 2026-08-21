@@ -164,7 +164,17 @@ public sealed record StockSnapshot(
     string Code,
     string Name,
     decimal? OnHand,
-    StockStatusKind Status);
+    StockStatusKind Status,
+    decimal MinStock = 0);
+
+public sealed record DocumentSummary(
+    int Id,
+    DocumentType Type,
+    DateTime DocumentDate,
+    string? DocumentNo,
+    bool IsCancelled,
+    int LineCount,
+    string? FirstItemName = null);
 
 public sealed class ImportPreview
 {

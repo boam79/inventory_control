@@ -26,8 +26,6 @@ public sealed class DisabledOnnxForecastEngine : IOnnxForecastEngine
 
 public static class UsageForecast
 {
-    private static readonly Lazy<IOnnxForecastEngine> DefaultOnnx = new(() =>
-        OnnxCpuEngine.TryCreate() ?? (IOnnxForecastEngine)new DisabledOnnxForecastEngine());
     private sealed class SeriesPoint
     {
         public float Value { get; set; }
@@ -42,7 +40,7 @@ public static class UsageForecast
         IReadOnlyList<decimal> history,
         IOnnxForecastEngine? onnx = null)
     {
-        onnx ??= DefaultOnnx.Value;
+        var explicitOnnx = onnx;
         if (history.Count < 3)
         {
             return new ForecastResult(
@@ -52,9 +50,15 @@ public static class UsageForecast
                 "데이터 부족: 예측 불가 또는 단순 평균만 가능합니다.");
         }
 
-        if (onnx.TryPredict(history, out var deep) && deep.Count > 0)
+        if (explicitOnnx is not null && explicitOnnx.TryPredict(history, out var deep) && deep.Count > 0)
         {
             return new ForecastResult(true, "ONNX", deep, string.Empty);
+        }
+
+        var seasonal = TrySeasonalNaive(history);
+        if (seasonal is not null)
+        {
+            return seasonal;
         }
 
         var ssa = TrySsa(history);
@@ -66,6 +70,23 @@ public static class UsageForecast
         var window = history.TakeLast(Math.Min(3, history.Count)).Select(v => (double)v).ToArray();
         var avg = (decimal)window.Mean();
         return new ForecastResult(true, "SMA3", new[] { avg, avg, avg }, string.Empty);
+    }
+
+    private static ForecastResult? TrySeasonalNaive(IReadOnlyList<decimal> history)
+    {
+        if (history.Count < 12)
+        {
+            return null;
+        }
+
+        var future = new decimal[3];
+        for (var horizon = 0; horizon < 3; horizon++)
+        {
+            var index = history.Count - 12 + horizon;
+            future[horizon] = index >= 0 && index < history.Count ? Math.Max(0, history[index]) : 0m;
+        }
+
+        return new ForecastResult(true, "전년동월", future, string.Empty);
     }
 
     private static ForecastResult? TrySsa(IReadOnlyList<decimal> history)
@@ -80,7 +101,9 @@ public static class UsageForecast
             var ml = new MLContext(seed: 1);
             var data = history.Select(v => new SeriesPoint { Value = (float)v }).ToList();
             var view = ml.Data.LoadFromEnumerable(data);
-            var windowSize = Math.Max(2, Math.Min(4, history.Count / 2));
+            var windowSize = history.Count >= 12
+                ? 12
+                : Math.Max(2, Math.Min(4, history.Count / 2));
             var pipeline = ml.Forecasting.ForecastBySsa(
                 outputColumnName: nameof(SeriesForecast.Forecast),
                 inputColumnName: nameof(SeriesPoint.Value),
