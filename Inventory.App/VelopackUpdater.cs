@@ -7,6 +7,10 @@ using Velopack.Sources;
 
 namespace Inventory.App;
 
+internal sealed record UpdatePromptInfo(string VersionTag, string Message);
+
+internal sealed record UpdateStartupResult(string StatusMessage, UpdatePromptInfo? Prompt);
+
 internal static class VelopackUpdater
 {
     public const string GitHubRepoUrl = "https://github.com/boam79/inventory_control";
@@ -19,23 +23,37 @@ internal static class VelopackUpdater
     public static Task<string> CheckAndDownloadAsync() =>
         ApplyFromButtonAsync(progress: null, applyAndRestart: true);
 
-    public static async Task<string> CheckStatusAsync()
+    public static async Task<UpdateStartupResult> CheckStartupAsync()
     {
         try
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
             var offer = await UpdateChecker.InspectLatestAsync(client);
-            return UpdateChecker.StatusMessage(offer, ProductInfo.Version);
+            var status = UpdateChecker.StatusMessage(offer, ProductInfo.Version);
+            UpdatePromptInfo? prompt = UpdateChecker.ShouldShowUpdatePrompt(offer, ProductInfo.Version)
+                ? new UpdatePromptInfo(
+                    offer.VersionTag,
+                    UpdateChecker.UpdatePromptMessage(offer, ProductInfo.Version))
+                : null;
+            return new UpdateStartupResult(status, prompt);
         }
         catch (Exception ex)
         {
             if (UpdateChecker.LooksLikeRateLimit(ex.Message))
             {
-                return UpdateChecker.RateLimitUserMessage;
+                return new UpdateStartupResult(UpdateChecker.RateLimitUserMessage, null);
             }
 
-            return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {UpdateChecker.ReleasesUrl}";
+            return new UpdateStartupResult(
+                $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {UpdateChecker.ReleasesUrl}",
+                null);
         }
+    }
+
+    public static async Task<string> CheckStatusAsync()
+    {
+        var result = await CheckStartupAsync();
+        return result.StatusMessage;
     }
 
     public static async Task<string> ApplyFromButtonAsync(IProgress<string>? progress = null, bool applyAndRestart = true)

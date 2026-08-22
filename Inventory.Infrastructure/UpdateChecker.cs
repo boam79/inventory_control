@@ -115,6 +115,16 @@ public static class UpdateChecker
         return $"최신입니다 ({offer.VersionTag}). 재고 업무를 계속하세요.";
     }
 
+    /// <summary>True when a successful check found a remote release newer than the installed version.</summary>
+    public static bool ShouldShowUpdatePrompt(LatestReleaseOffer offer, string currentVersion) =>
+        offer.Found && IsRemoteNewer(offer.VersionTag, currentVersion);
+
+    public static string UpdatePromptMessage(LatestReleaseOffer offer, string currentVersion) =>
+        $"새 버전 {offer.VersionTag}이(가) 배포되었습니다.\n\n"
+        + $"현재 버전: {currentVersion}\n\n"
+        + "지금 업데이트하면 프로그램이 다시 시작됩니다.\n"
+        + "나중에 하려면 상단 「업데이트」 버튼을 이용하세요.";
+
     public static string AfterVelopackNoUpdate(LatestReleaseOffer? offer, string currentVersion)
     {
         if (offer is { Found: true } && IsRemoteNewer(offer.VersionTag, currentVersion))

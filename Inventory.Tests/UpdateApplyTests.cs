@@ -89,6 +89,42 @@ public class UpdateApplyTests
     }
 
     [Fact]
+    public void Update_prompt_shown_only_when_remote_is_newer()
+    {
+        var newer = new LatestReleaseOffer(
+            true,
+            "v1.0.4",
+            "https://example.invalid/Setup.exe",
+            null,
+            null,
+            false,
+            "최신 v1.0.4");
+        Assert.True(UpdateChecker.ShouldShowUpdatePrompt(newer, "1.0.3"));
+        Assert.False(UpdateChecker.ShouldShowUpdatePrompt(newer, "1.0.4"));
+        Assert.False(UpdateChecker.ShouldShowUpdatePrompt(
+            new LatestReleaseOffer(false, "", null, null, null, false, UpdateChecker.RateLimitUserMessage),
+            "1.0.3"));
+    }
+
+    [Fact]
+    public void Update_prompt_message_is_korean_with_version_guidance()
+    {
+        var offer = new LatestReleaseOffer(
+            true,
+            "v1.0.29",
+            "https://example.invalid/Setup.exe",
+            null,
+            null,
+            false,
+            "최신 v1.0.29");
+        var message = UpdateChecker.UpdatePromptMessage(offer, "1.0.28");
+        Assert.Contains("v1.0.29", message);
+        Assert.Contains("1.0.28", message);
+        Assert.Contains("다시 시작", message);
+        Assert.Contains("업데이트", message);
+    }
+
+    [Fact]
     public void Velopack_win_feed_json_captures_version_and_setup_url()
     {
         const string json = """

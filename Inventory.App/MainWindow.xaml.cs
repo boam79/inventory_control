@@ -14,6 +14,7 @@ public partial class MainWindow : Window
 {
     private string? _seedNote;
     private string _selectedMenu = "dashboard";
+    private bool _startupUpdatePromptShown;
 
     public MainWindow()
     {
@@ -188,16 +189,23 @@ public partial class MainWindow : Window
 
         try
         {
-            var update = await VelopackUpdater.CheckStatusAsync();
-            var first = update.Split('\n')[0];
-            var warn = first.Contains("실패", StringComparison.Ordinal)
-                       || first.Contains("못", StringComparison.Ordinal)
-                       || first.Contains("원인", StringComparison.Ordinal);
-            SetAlert(first, warn);
+            var startup = await VelopackUpdater.CheckStartupAsync();
+            if (startup.Prompt is not null)
+            {
+                await TryShowStartupUpdatePromptAsync(startup.Prompt);
+            }
+            else
+            {
+                var first = startup.StatusMessage.Split('\n')[0];
+                var warn = first.Contains("실패", StringComparison.Ordinal)
+                           || first.Contains("못", StringComparison.Ordinal)
+                           || first.Contains("원인", StringComparison.Ordinal);
+                SetAlert(first, warn);
+            }
         }
         catch
         {
-            SetAlert("업데이트를 확인하지 못했습니다. 재고 업무를 계속하세요.", isWarning: true);
+            // startup check failure: no popup; header alert unchanged
         }
 
         if (!string.IsNullOrWhiteSpace(_seedNote))
@@ -288,7 +296,24 @@ public partial class MainWindow : Window
 
     public void ShowDashboard() => OpenMenu("dashboard", force: true);
 
-    private async void Update_Click(object sender, RoutedEventArgs e)
+    private async Task TryShowStartupUpdatePromptAsync(UpdatePromptInfo? prompt)
+    {
+        if (prompt is null || _startupUpdatePromptShown)
+        {
+            return;
+        }
+
+        _startupUpdatePromptShown = true;
+        var dialog = new UpdatePromptDialog(this, prompt.Message);
+        if (dialog.ShowDialog() == true && dialog.ApplyNow)
+        {
+            await ApplyUpdateAsync();
+        }
+    }
+
+    private async void Update_Click(object sender, RoutedEventArgs e) => await ApplyUpdateAsync();
+
+    private async Task ApplyUpdateAsync()
     {
         UpdateButton.IsEnabled = false;
         SetAlert("업데이트를 준비하는 중...", isWarning: false);
