@@ -318,6 +318,14 @@ public sealed class IssueView : WorkspaceView
             selectedCode = item.Code;
             itemQuery.Text = item.Name;
             status.Text = $"{item.Name} ({item.Code})";
+            if (string.IsNullOrWhiteSpace(dept.Text) && item.DefaultDepartmentId is { } deptId)
+            {
+                var deptName = db.Departments.FirstOrDefault(d => d.Id == deptId)?.Name;
+                if (!string.IsNullOrWhiteSpace(deptName))
+                {
+                    dept.Text = deptName;
+                }
+            }
         }
 
         void ReloadRecent()

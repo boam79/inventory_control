@@ -40,6 +40,20 @@ public sealed class OperationsTests : IDisposable
     }
 
     [Fact]
+    public void Excel_master_import_reads_default_department_column_and_creates_department()
+    {
+        var sample = CreateSampleWorkbook(defaultDepartmentForM001: "외과");
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        ExcelCatalog.ImportMaster(db, sample, includeOpening: false);
+        var item = db.Items.Single(i => i.Code == "M001");
+        Assert.NotNull(item.DefaultDepartmentId);
+        var dept = db.Departments.Single(d => d.Id == item.DefaultDepartmentId);
+        Assert.Equal("외과", dept.Name);
+        var other = db.Items.Single(i => i.Code == "M002");
+        Assert.Null(other.DefaultDepartmentId);
+    }
+
+    [Fact]
     public void Excel_full_history_skips_empty_formula_rows_and_commits_real_transactions()
     {
         var sample = CreateSampleWorkbook(withHistory: true);
@@ -320,7 +334,7 @@ public sealed class OperationsTests : IDisposable
         Assert.DoesNotContain(bars, b => b.Month != DateTime.Today.Month && b.Qty > 0 && false);
     }
 
-    private string CreateSampleWorkbook(decimal? openingForM001 = null, bool withHistory = false)
+    private string CreateSampleWorkbook(decimal? openingForM001 = null, bool withHistory = false, string? defaultDepartmentForM001 = null)
     {
         var path = Path.Combine(_work, $"sample-{Guid.NewGuid():N}.xlsx");
         using var wb = new XLWorkbook();
@@ -331,6 +345,7 @@ public sealed class OperationsTests : IDisposable
         items.Cell(2, 3).Value = "분류";
         items.Cell(2, 4).Value = "규격/단위";
         items.Cell(2, 5).Value = "구입가격";
+        items.Cell(2, 6).Value = "기본사용부서";
         items.Cell(2, 8).Value = "최소재고";
         var rows = new[]
         {
@@ -348,6 +363,11 @@ public sealed class OperationsTests : IDisposable
             items.Cell(3 + i, 4).Value = "개";
             items.Cell(3 + i, 5).Value = 0;
             items.Cell(3 + i, 8).Value = 10;
+        }
+
+        if (defaultDepartmentForM001 is not null)
+        {
+            items.Cell(3, 6).Value = defaultDepartmentForM001;
         }
 
         items.Cell(20, 1).Value = "";

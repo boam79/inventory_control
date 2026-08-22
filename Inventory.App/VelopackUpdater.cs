@@ -11,6 +11,11 @@ internal static class VelopackUpdater
 {
     public const string GitHubRepoUrl = "https://github.com/boam79/inventory_control";
 
+    /// <summary>
+    /// Static asset base for Velopack (RELEASES / nupkg). Avoids GithubSource → api.github.com rate limits.
+    /// </summary>
+    public const string LatestFeedBaseUrl = UpdateChecker.LatestDownloadBase;
+
     public static Task<string> CheckAndDownloadAsync() =>
         ApplyFromButtonAsync(progress: null, applyAndRestart: true);
 
@@ -24,6 +29,11 @@ internal static class VelopackUpdater
         }
         catch (Exception ex)
         {
+            if (UpdateChecker.LooksLikeRateLimit(ex.Message))
+            {
+                return UpdateChecker.RateLimitUserMessage;
+            }
+
             return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {UpdateChecker.ReleasesUrl}";
         }
     }
@@ -43,15 +53,25 @@ internal static class VelopackUpdater
             {
                 progress?.Report(offer.Message);
             }
+            else if (UpdateChecker.LooksLikeRateLimit(offer.Message))
+            {
+                return offer.Message;
+            }
 
             UpdateManager mgr;
             try
             {
-                var source = new GithubSource(GitHubRepoUrl, string.Empty, prerelease: false);
+                // CDN asset URL — does not call api.github.com (403 rate limit).
+                var source = new SimpleWebSource(LatestFeedBaseUrl);
                 mgr = new UpdateManager(source);
             }
             catch (Exception ex)
             {
+                if (UpdateChecker.LooksLikeRateLimit(ex.Message))
+                {
+                    return UpdateChecker.RateLimitUserMessage;
+                }
+
                 return NotInstalledOrInitFailed(ex, offer);
             }
 
@@ -68,7 +88,12 @@ internal static class VelopackUpdater
             }
             catch (Exception ex)
             {
-                return $"원인: 설치본 업데이트를 확인하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.ReleasesUrl)}";
+                if (UpdateChecker.LooksLikeRateLimit(ex.Message))
+                {
+                    return UpdateChecker.RateLimitUserMessage;
+                }
+
+                return $"원인: 설치본 업데이트를 확인하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.LatestSetupUrl)}";
             }
 
             if (info is null)
@@ -142,7 +167,12 @@ internal static class VelopackUpdater
         }
         catch (Exception ex)
         {
-            return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 지금 프로그램을 그대로 씁니다. 입고·출고는 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.ReleasesUrl)}";
+            if (UpdateChecker.LooksLikeRateLimit(ex.Message))
+            {
+                return UpdateChecker.RateLimitUserMessage;
+            }
+
+            return $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 지금 프로그램을 그대로 씁니다. 입고·출고는 계속하세요. {(offer?.PackageUrl ?? UpdateChecker.LatestSetupUrl)}";
         }
     }
 
@@ -154,7 +184,7 @@ internal static class VelopackUpdater
     }
 
     private static string NotInstalledOrInitFailed(Exception ex, LatestReleaseOffer? offer) =>
-        $"원인: 업데이트 구성을 시작하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. 설치본에서만 자동 업데이트됩니다.\n다운로드: {offer?.PackageUrl ?? UpdateChecker.ReleasesUrl}";
+        $"원인: 업데이트 구성을 시작하지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. 설치본에서만 자동 업데이트됩니다.\n다운로드: {offer?.PackageUrl ?? UpdateChecker.LatestSetupUrl}";
 
     private static async Task<string> LaunchVerifiedSetupAsync(LatestReleaseOffer offer, IProgress<string>? progress)
     {

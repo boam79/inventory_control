@@ -26,7 +26,23 @@ public static class UpdateChecker
 {
     public const string ReleasesUrl = "https://github.com/boam79/inventory_control/releases";
     public const string LatestApi = "https://api.github.com/repos/boam79/inventory_control/releases/latest";
+    /// <summary>Velopack SimpleWebSource base — GitHub CDN asset URLs, not api.github.com (avoids API rate limits).</summary>
+    public const string LatestDownloadBase = "https://github.com/boam79/inventory_control/releases/latest/download";
+    public const string LatestFeedUrl = LatestDownloadBase + "/releases.win.json";
     public const string SetupFileName = "SpringClinic.Inventory-win-Setup.exe";
+    public const string LatestSetupUrl = LatestDownloadBase + "/" + SetupFileName;
+    public const string LatestSetupSha256Url = LatestDownloadBase + "/SpringClinic.Inventory-win-Setup.sha256";
+
+    public static string RateLimitUserMessage =>
+        "원인: GitHub 업데이트 확인 한도를 잠시 초과했습니다(403).\n"
+        + "조치: 잠시 후 다시 시도하세요. 급하면 Releases에서 Setup.exe를 직접 받아 설치하세요.\n"
+        + "다운로드: " + LatestSetupUrl + "\n목록: " + ReleasesUrl;
+
+    public static bool LooksLikeRateLimit(string? message, System.Net.HttpStatusCode? status = null) =>
+        status == System.Net.HttpStatusCode.Forbidden
+        || (!string.IsNullOrWhiteSpace(message)
+            && (message.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("403", StringComparison.Ordinal)));
 
     public static async Task<UpdateCheckResult> CheckAsync(HttpClient? client = null)
     {
@@ -35,16 +51,25 @@ public static class UpdateChecker
         try
         {
             EnsureUserAgent(client);
-            using var response = await client.GetAsync(LatestApi);
+            using var response = await client.GetAsync(LatestFeedUrl);
+            if (LooksLikeRateLimit(null, response.StatusCode))
+            {
+                return new UpdateCheckResult(false, RateLimitUserMessage, ReleasesUrl);
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 return new UpdateCheckResult(false, "업데이트를 확인하지 못했습니다. 재고 업무는 계속할 수 있습니다.", ReleasesUrl);
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            var tag = doc.RootElement.TryGetProperty("tag_name", out var name) ? name.GetString() : "unknown";
+            var json = await response.Content.ReadAsStringAsync();
+            var offer = ParseVelopackWinFeed(json);
+            var tag = offer.Found ? offer.VersionTag : "unknown";
             return new UpdateCheckResult(true, $"최신 배포: {tag}", ReleasesUrl);
+        }
+        catch (Exception ex) when (LooksLikeRateLimit(ex.Message))
+        {
+            return new UpdateCheckResult(false, RateLimitUserMessage, ReleasesUrl);
         }
         catch
         {
@@ -61,9 +86,8 @@ public static class UpdateChecker
 
     public static string SetupDownloadUrl(string? tagName) =>
         string.IsNullOrWhiteSpace(tagName)
-            ? ReleasesUrl
+            ? LatestSetupUrl
             : $"https://github.com/boam79/inventory_control/releases/download/{tagName.Trim()}/{SetupFileName}";
-
     public static bool HashesMatch(string? expectedHex, string? actualHex) =>
         !string.IsNullOrWhiteSpace(expectedHex)
         && !string.IsNullOrWhiteSpace(actualHex)
@@ -115,6 +139,29 @@ public static class UpdateChecker
 
         var trimmed = value.Trim().TrimStart('v', 'V');
         return Version.TryParse(trimmed, out var parsed) ? parsed : null;
+    }
+
+    public static LatestReleaseOffer ParseVelopackWinFeed(string json, string? sha256Hex = null)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("Assets", out var assets)
+            || assets.ValueKind != JsonValueKind.Array
+            || assets.GetArrayLength() == 0)
+        {
+            return new LatestReleaseOffer(false, "", null, null, null, false, "새 설치 버전이 없습니다. 재고 업무를 계속하세요.");
+        }
+
+        var asset = assets[0];
+        var version = asset.TryGetProperty("Version", out var v) ? v.GetString() : null;
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return new LatestReleaseOffer(false, "", null, null, null, false, "새 설치 버전이 없습니다. 재고 업무를 계속하세요.");
+        }
+
+        var tag = version.StartsWith('v') || version.StartsWith('V') ? version : "v" + version;
+        var packageUrl = SetupDownloadUrl(tag);
+        var message = $"최신 {tag}\n다운로드: {packageUrl}";
+        return new LatestReleaseOffer(true, tag, packageUrl, LatestSetupSha256Url, sha256Hex, HashRequired: true, message);
     }
 
     public static LatestReleaseOffer ParseLatestRelease(string json, string? sha256Hex = null)
@@ -186,7 +233,30 @@ public static class UpdateChecker
         try
         {
             EnsureUserAgent(client);
+            // Prefer static release asset URL (no api.github.com quota).
+            using var feedResponse = await client.GetAsync(LatestFeedUrl);
+            if (LooksLikeRateLimit(null, feedResponse.StatusCode))
+            {
+                return new LatestReleaseOffer(false, "", null, null, null, false, RateLimitUserMessage);
+            }
+
+            if (feedResponse.IsSuccessStatusCode)
+            {
+                var feedJson = await feedResponse.Content.ReadAsStringAsync();
+                var fromFeed = ParseVelopackWinFeed(feedJson);
+                if (fromFeed.Found)
+                {
+                    return await AttachSetupSha256Async(client, fromFeed);
+                }
+            }
+
+            // Fallback: GitHub Releases API (may 403 when unauthenticated quota is exhausted).
             using var response = await client.GetAsync(LatestApi);
+            if (LooksLikeRateLimit(null, response.StatusCode))
+            {
+                return new LatestReleaseOffer(false, "", null, null, null, false, RateLimitUserMessage);
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 return new LatestReleaseOffer(false, "", null, null, null, false, "업데이트를 확인하지 못했습니다. 재고 업무는 계속할 수 있습니다.");
@@ -199,23 +269,11 @@ public static class UpdateChecker
                 return offer;
             }
 
-            try
-            {
-                var hashText = (await client.GetStringAsync(offer.Sha256Url)).Trim();
-                var hex = hashText.Split(' ', '\n', '\t', '\r')[0];
-                return offer with
-                {
-                    Sha256Hex = hex,
-                    Message = $"{offer.Message}\nSHA256: {hex}"
-                };
-            }
-            catch (Exception ex)
-            {
-                return offer with
-                {
-                    Message = $"원인: 해시 파일을 읽지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 지금 버전을 유지합니다. 입고·출고는 계속하세요."
-                };
-            }
+            return await AttachSetupSha256Async(client, offer);
+        }
+        catch (Exception ex) when (LooksLikeRateLimit(ex.Message))
+        {
+            return new LatestReleaseOffer(false, "", null, null, null, false, RateLimitUserMessage);
         }
         catch
         {
@@ -227,6 +285,41 @@ public static class UpdateChecker
             {
                 client.Dispose();
             }
+        }
+    }
+
+    private static async Task<LatestReleaseOffer> AttachSetupSha256Async(HttpClient client, LatestReleaseOffer offer)
+    {
+        if (string.IsNullOrWhiteSpace(offer.Sha256Url))
+        {
+            return offer;
+        }
+
+        try
+        {
+            using var hashResponse = await client.GetAsync(offer.Sha256Url);
+            if (!hashResponse.IsSuccessStatusCode)
+            {
+                // Setup.sha256 may be missing on older releases; still allow Setup download without hard fail.
+                return offer with { HashRequired = false, Sha256Url = null };
+            }
+
+            var hashText = (await hashResponse.Content.ReadAsStringAsync()).Trim();
+            var hex = hashText.Split(' ', '\n', '\t', '\r')[0];
+            return offer with
+            {
+                Sha256Hex = hex,
+                HashRequired = true,
+                Message = $"{offer.Message}\nSHA256: {hex}"
+            };
+        }
+        catch (Exception ex)
+        {
+            return offer with
+            {
+                HashRequired = false,
+                Message = $"원인: 해시 파일을 읽지 못했습니다. {AppLog.Sanitize(ex.Message)}\n조치: 지금 버전을 유지합니다. 입고·출고는 계속하세요."
+            };
         }
     }
 
@@ -304,51 +397,16 @@ public static class UpdateChecker
     {
         try
         {
-            EnsureUserAgent(client);
-            using var response = await client.GetAsync(LatestApi);
-            if (!response.IsSuccessStatusCode)
+            var offer = await InspectLatestAsync(client);
+            if (!offer.Found || string.IsNullOrWhiteSpace(offer.PackageUrl) || string.IsNullOrWhiteSpace(offer.Sha256Hex))
             {
                 return null;
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            if (!doc.RootElement.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
-            {
-                return null;
-            }
-
-            string? packageUrl = null;
-            string? shaUrl = null;
-            foreach (var asset in assets.EnumerateArray())
-            {
-                var name = asset.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
-                if (string.IsNullOrWhiteSpace(url))
-                {
-                    continue;
-                }
-
-                if (name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase))
-                {
-                    shaUrl = url;
-                }
-                else if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    packageUrl = url;
-                }
-            }
-
-            if (packageUrl is null || shaUrl is null)
-            {
-                return null;
-            }
-
-            var hashText = (await client.GetStringAsync(shaUrl)).Trim().Split(' ', '\n', '\t')[0];
             return await DownloadVerifyAndStageAsync(
                 client,
-                new Uri(packageUrl),
-                hashText,
+                new Uri(offer.PackageUrl),
+                offer.Sha256Hex,
                 dbPath,
                 stagingFolder,
                 currentMarkerPath);

@@ -45,6 +45,8 @@ public sealed class Item
     public bool LotTracked { get; set; } = true;
     public bool ExpiryTracked { get; set; } = true;
     public OpeningStatus OpeningStatus { get; set; } = OpeningStatus.Unset;
+    /// <summary>기본 사용부서: 출고 시 이 품목을 보통 쓰는 부서(품목마스터 선택 필드, PRD 7.2). 출고 등록에서 기본값으로 제안된다.</summary>
+    public int? DefaultDepartmentId { get; set; }
 }
 
 public sealed class Department

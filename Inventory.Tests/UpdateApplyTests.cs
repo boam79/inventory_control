@@ -89,6 +89,65 @@ public class UpdateApplyTests
     }
 
     [Fact]
+    public void Velopack_win_feed_json_captures_version_and_setup_url()
+    {
+        const string json = """
+            {"Assets":[{"PackageId":"SpringClinic.Inventory","Version":"1.0.23","Type":"Full","FileName":"SpringClinic.Inventory-1.0.23-full.nupkg","SHA256":"ABC"}]}
+            """;
+        var offer = UpdateChecker.ParseVelopackWinFeed(json);
+        Assert.True(offer.Found);
+        Assert.Equal("v1.0.23", offer.VersionTag);
+        Assert.Equal(UpdateChecker.SetupDownloadUrl("v1.0.23"), offer.PackageUrl);
+        Assert.Equal(UpdateChecker.LatestSetupSha256Url, offer.Sha256Url);
+        Assert.Contains(UpdateChecker.LatestDownloadBase, UpdateChecker.LatestFeedUrl);
+    }
+
+    [Fact]
+    public void Rate_limit_message_is_korean_and_points_to_manual_setup()
+    {
+        Assert.True(UpdateChecker.LooksLikeRateLimit("Response status code does not indicate success: 403 (rate limit exceeded)."));
+        Assert.True(UpdateChecker.LooksLikeRateLimit(null, HttpStatusCode.Forbidden));
+        Assert.Contains("한도", UpdateChecker.RateLimitUserMessage);
+        Assert.Contains("잠시 후", UpdateChecker.RateLimitUserMessage);
+        Assert.Contains(UpdateChecker.LatestSetupUrl, UpdateChecker.RateLimitUserMessage);
+        Assert.Contains(UpdateChecker.ReleasesUrl, UpdateChecker.RateLimitUserMessage);
+    }
+
+    [Fact]
+    public async Task Inspect_latest_prefers_static_feed_over_api()
+    {
+        var package = "pkg"u8.ToArray();
+        var hex = UpdateChecker.Sha256Hex(package);
+        using var handler = new MapHandler(new Dictionary<string, (HttpStatusCode Code, string Body, byte[]? Bytes)>(StringComparer.OrdinalIgnoreCase)
+        {
+            [UpdateChecker.LatestFeedUrl] = (HttpStatusCode.OK, """
+                {"Assets":[{"PackageId":"SpringClinic.Inventory","Version":"9.9.9","Type":"Full","FileName":"x.nupkg"}]}
+                """, null),
+            [UpdateChecker.LatestSetupSha256Url] = (HttpStatusCode.OK, $"{hex}  SpringClinic.Inventory-win-Setup.exe\n", null),
+            [UpdateChecker.LatestApi] = (HttpStatusCode.Forbidden, "rate limit exceeded", null)
+        });
+        using var client = new HttpClient(handler);
+        var offer = await UpdateChecker.InspectLatestAsync(client);
+        Assert.True(offer.Found);
+        Assert.Equal("v9.9.9", offer.VersionTag);
+        Assert.True(UpdateChecker.HashesMatch(hex, offer.Sha256Hex));
+    }
+
+    [Fact]
+    public async Task Inspect_latest_returns_korean_rate_limit_when_feed_forbidden()
+    {
+        using var handler = new MapHandler(new Dictionary<string, (HttpStatusCode Code, string Body, byte[]? Bytes)>(StringComparer.OrdinalIgnoreCase)
+        {
+            [UpdateChecker.LatestFeedUrl] = (HttpStatusCode.Forbidden, "rate limit exceeded", null)
+        });
+        using var client = new HttpClient(handler);
+        var offer = await UpdateChecker.InspectLatestAsync(client);
+        Assert.False(offer.Found);
+        Assert.Contains("한도", offer.Message);
+        Assert.Contains("403", offer.Message);
+    }
+
+    [Fact]
     public async Task Inspect_latest_fills_sha256_hex_when_hash_asset_exists()
     {
         var package = "pkg"u8.ToArray();
@@ -158,7 +217,7 @@ public class UpdateApplyTests
         Exception? beforeInit = null;
         try
         {
-            var source = new GithubSource("https://github.com/boam79/inventory_control", string.Empty, prerelease: false);
+            var source = new SimpleWebSource(UpdateChecker.LatestDownloadBase);
             _ = new UpdateManager(source);
         }
         catch (Exception ex)
@@ -174,7 +233,7 @@ public class UpdateApplyTests
         var installed = true;
         try
         {
-            var source = new GithubSource("https://github.com/boam79/inventory_control", string.Empty, prerelease: false);
+            var source = new SimpleWebSource(UpdateChecker.LatestDownloadBase);
             var mgr = new UpdateManager(source);
             installed = mgr.IsInstalled;
         }

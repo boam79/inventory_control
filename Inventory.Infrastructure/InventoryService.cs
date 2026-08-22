@@ -23,7 +23,8 @@ public sealed class InventoryService
         string unit,
         decimal minStock,
         bool lotTracked = true,
-        bool expiryTracked = true)
+        bool expiryTracked = true,
+        int? defaultDepartmentId = null)
     {
         if (_db.Items.Any(i => i.Code == code))
         {
@@ -40,7 +41,8 @@ public sealed class InventoryService
             MinStock = minStock,
             LotTracked = lotTracked,
             ExpiryTracked = expiryTracked,
-            OpeningStatus = OpeningStatus.Unset
+            OpeningStatus = OpeningStatus.Unset,
+            DefaultDepartmentId = defaultDepartmentId
         };
         _db.Items.Add(item);
         _db.SaveChanges();

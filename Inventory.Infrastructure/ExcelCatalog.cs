@@ -75,7 +75,16 @@ public static class ExcelCatalog
 
             var spec = excelRow.Cell(4).GetString().Trim();
             var minStock = ParseDecimal(excelRow.Cell(8).GetString());
-            var item = svc.CreateItem(code, name, excelRow.Cell(3).GetString().Trim(), spec, spec, minStock);
+            var deptName = excelRow.Cell(6).GetString().Trim();
+            int? defaultDepartmentId = null;
+            if (!string.IsNullOrWhiteSpace(deptName))
+            {
+                var dept = db.Departments.FirstOrDefault(d => d.Name == deptName)
+                           ?? svc.CreateDepartment(deptName);
+                defaultDepartmentId = dept.Id;
+            }
+
+            var item = svc.CreateItem(code, name, excelRow.Cell(3).GetString().Trim(), spec, spec, minStock, defaultDepartmentId: defaultDepartmentId);
             if (decimal.TryParse(excelRow.Cell(5).GetString(), out var price) && price > 0)
             {
                 item.ReferencePrice = price;
