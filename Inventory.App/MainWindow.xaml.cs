@@ -66,14 +66,14 @@ public partial class MainWindow : Window
         {
             if (e.Key == Key.D1 || e.Key == Key.NumPad1)
             {
-                OpenMenu("receive");
+                OpenReceiveIssue(VoucherMode.Receive);
                 e.Handled = true;
                 return;
             }
 
             if (e.Key == Key.D2 || e.Key == Key.NumPad2)
             {
-                OpenMenu("issue");
+                OpenReceiveIssue(VoucherMode.Issue);
                 e.Handled = true;
                 return;
             }
@@ -152,6 +152,7 @@ public partial class MainWindow : Window
 
     public void OpenMenu(string tag, bool force = false)
     {
+        tag = ShellPages.NormalizeTag(tag);
         var same = !force && tag == _selectedMenu && MainContent.Content is not TextBlock and not null;
         _selectedMenu = tag;
         HighlightNav();
@@ -159,6 +160,12 @@ public partial class MainWindow : Window
         {
             ShowPage(tag);
         }
+    }
+
+    public void OpenReceiveIssue(VoucherMode mode, string? itemCode = null, string? itemName = null, bool expandForm = true)
+    {
+        ReceiveIssueView.PendingLaunch = new ReceiveIssueView.LaunchContext(mode, itemCode, itemName, expandForm);
+        OpenMenu("receive_issue", force: true);
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -360,8 +367,7 @@ public partial class MainWindow : Window
             MainContent.Content = captured switch
             {
                 "dashboard" => new Views.DashboardView(),
-                "receive" => new Views.ReceiveView(),
-                "issue" => new Views.IssueView(),
+                "receive_issue" => new Views.ReceiveIssueView(),
                 "stock" => new Views.StockView(),
                 "stats" => new Views.StatsView(),
                 "users" => new Views.UsersView(),

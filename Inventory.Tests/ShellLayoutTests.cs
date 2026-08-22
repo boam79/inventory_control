@@ -17,14 +17,16 @@ public class ShellLayoutTests
         }
 
         Assert.Equal("대시보드", ShellPages.Title("dashboard"));
-        Assert.Equal("입고", ShellPages.Title("receive"));
+        Assert.Equal("입출고", ShellPages.Title("receive_issue"));
         Assert.Equal("재고현황", ShellPages.Title("stock"));
-        Assert.Equal("입고", ShellPages.NavLabel("receive"));
+        Assert.Equal("입출고", ShellPages.NavLabel("receive_issue"));
         Assert.Equal("재고", ShellPages.NavLabel("stock"));
         Assert.Equal("대시보드", ShellPages.NavLabel("dashboard"));
         Assert.DoesNotContain("lots", ShellPages.MenuTags);
         Assert.DoesNotContain("close", ShellPages.MenuTags);
         Assert.DoesNotContain("masters", ShellPages.MenuTags);
+        Assert.DoesNotContain("receive", ShellPages.MenuTags);
+        Assert.DoesNotContain("issue", ShellPages.MenuTags);
         Assert.DoesNotContain("lots", ShellPages.NavOrder);
         Assert.DoesNotContain("close", ShellPages.NavOrder);
         Assert.DoesNotContain("masters", ShellPages.NavOrder);
@@ -65,7 +67,29 @@ public class ShellLayoutTests
         Assert.Equal("관리", ShellPages.NavGroups[2].GroupLabel);
         var flags = RolePermissions.For(UserRole.Administrator);
         var work = ShellPages.OrderedTagsInGroup("업무", flags).ToList();
-        Assert.Equal(["receive", "issue", "stock"], work);
+        Assert.Equal(["receive_issue", "stock"], work);
+    }
+
+    [Fact]
+    public void Receive_issue_tab_visible_with_receive_or_issue_permission()
+    {
+        var admin = ShellPages.CanSee("receive_issue", RolePermissions.For(UserRole.Administrator));
+        var purchasing = ShellPages.CanSee("receive_issue", RolePermissions.For(UserRole.Purchasing));
+        var dept = ShellPages.CanSee("receive_issue", RolePermissions.For(UserRole.DepartmentUser));
+        var viewer = ShellPages.CanSee("receive_issue", RolePermissions.For(UserRole.Viewer));
+
+        Assert.True(admin);
+        Assert.True(purchasing);
+        Assert.True(dept);
+        Assert.False(viewer);
+    }
+
+    [Fact]
+    public void Legacy_receive_and_issue_tags_normalize_to_receive_issue()
+    {
+        Assert.Equal("receive_issue", ShellPages.NormalizeTag("receive"));
+        Assert.Equal("receive_issue", ShellPages.NormalizeTag("issue"));
+        Assert.Equal("stock", ShellPages.NormalizeTag("stock"));
     }
 
     [Fact]
@@ -98,6 +122,9 @@ public class ShellLayoutTests
         Assert.DoesNotContain("class MastersView", forms, StringComparison.Ordinal);
         Assert.DoesNotContain("class LedgerView", forms, StringComparison.Ordinal);
         Assert.DoesNotContain("class ReorderView", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("class ReceiveView", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("class IssueView", forms, StringComparison.Ordinal);
+        Assert.Contains("class ReceiveIssueView", forms, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -111,6 +138,10 @@ public class ShellLayoutTests
         var mainWindow = ReadRepoFile("Inventory.App", "MainWindow.xaml.cs");
         Assert.DoesNotContain("Views.LedgerView", mainWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("Views.ReorderView", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Views.ReceiveView", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Views.IssueView", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Views.ReceiveIssueView", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("OpenReceiveIssue", mainWindow, StringComparison.Ordinal);
 
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         var workspace = ReadRepoFile("Inventory.App", "Views", "WorkspaceViews.cs");
@@ -119,9 +150,9 @@ public class ShellLayoutTests
         Assert.Contains("Danger(\"삭제\"", forms, StringComparison.Ordinal);
         Assert.Contains("Danger(\"복원\"", workspace, StringComparison.Ordinal);
         Assert.Contains("ItemSearchBox", forms, StringComparison.Ordinal);
-        Assert.Contains("Section(\"이번 전표 품목\"", forms, StringComparison.Ordinal);
-        Assert.Contains("Section(\"최근 입고\"", forms, StringComparison.Ordinal);
-        Assert.Contains("Section(\"최근 출고\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Section(\"새 전표\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Section(\"최근 전표\"", forms, StringComparison.Ordinal);
+        Assert.Contains("입고 저장", forms, StringComparison.Ordinal);
         Assert.Contains("출고 저장", forms, StringComparison.Ordinal);
         Assert.Contains("GetDocumentDetail", forms, StringComparison.Ordinal);
         Assert.Contains("DeleteDocument", forms, StringComparison.Ordinal);
@@ -129,7 +160,7 @@ public class ShellLayoutTests
     }
 
     [Fact]
-    public void Receive_and_Issue_recent_lists_support_multi_select_delete()
+    public void Receive_issue_recent_list_supports_multi_select_delete_and_type_filter()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         var workspace = ReadRepoFile("Inventory.App", "Views", "WorkspaceViews.cs");
@@ -139,20 +170,20 @@ public class ShellLayoutTests
         Assert.Contains("수정은 한 건만 선택할 수 있습니다.", forms, StringComparison.Ordinal);
         Assert.Contains("선택한 {toDelete.Count}건의 전표를 삭제할까요?", forms, StringComparison.Ordinal);
 
-        var receiveStart = forms.IndexOf("public sealed class ReceiveView", StringComparison.Ordinal);
-        var issueStart = forms.IndexOf("public sealed class IssueView", StringComparison.Ordinal);
+        var viewStart = forms.IndexOf("public sealed class ReceiveIssueView", StringComparison.Ordinal);
         var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
-        Assert.True(receiveStart >= 0 && issueStart > receiveStart && stockStart > issueStart);
-        var receive = forms[receiveStart..issueStart];
-        var issue = forms[issueStart..stockStart];
-        Assert.Contains("allowMultiSelect: true", receive, StringComparison.Ordinal);
-        Assert.Contains("allowMultiSelect: true", issue, StringComparison.Ordinal);
-        Assert.Contains("SelectedRecentRows()", receive, StringComparison.Ordinal);
-        Assert.Contains("SelectedRecentRows()", issue, StringComparison.Ordinal);
+        Assert.True(viewStart >= 0 && stockStart > viewStart);
+        var receiveIssue = forms[viewStart..stockStart];
+        Assert.Contains("allowMultiSelect: true", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("SelectedRecentRows()", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("ColumnSpec(\"유형\", \"유형\"", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("(\"all\", \"전체\"), (\"receive\", \"입고\"), (\"issue\", \"출고\")", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("RadioButton", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("Expander", receiveIssue, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Stock_screen_is_a_filter_and_table()
+    public void Stock_screen_is_a_filter_and_table_with_receive_issue_shortcuts()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         Assert.Contains("TableGrid", forms, StringComparison.Ordinal);
@@ -164,52 +195,48 @@ public class ShellLayoutTests
         Assert.Contains("Primary(\"적용\"", forms, StringComparison.Ordinal);
         Assert.Contains("Btn(\"초기화\"", forms, StringComparison.Ordinal);
         Assert.Contains("(\"exp\", \"임박\")", forms, StringComparison.Ordinal);
+        Assert.Contains("이 품목 입고", forms, StringComparison.Ordinal);
+        Assert.Contains("이 품목 출고", forms, StringComparison.Ordinal);
+        Assert.Contains("itemSearch.SelectionChanged += _ => Reload();", forms, StringComparison.Ordinal);
+        Assert.Contains("LOT 상세", forms, StringComparison.Ordinal);
         Assert.DoesNotContain("(\"유효기간\", nameof(StockRow.유효기간))", forms, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Recent_documents_show_item_name_and_expired_lots_are_flagged()
     {
-        // Found via user-story QA: cancelling a receipt/issue required knowing its item,
-        // but the recent-document lists only showed date/doc id/line count, not the item.
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         Assert.Contains("품목 = d.LineCount > 1 ? $\"{d.FirstItemName} 등 {d.LineCount}건\" : d.FirstItemName ?? \"—\"", forms, StringComparison.Ordinal);
         Assert.Contains("(\"품목\", \"품목\")", forms, StringComparison.Ordinal);
-
-        // Already-expired lots (음수 남은일) were listed with no visual flag.
         Assert.Contains("IsExpired = days is not null && days < 0", forms, StringComparison.Ordinal);
         Assert.Contains("class LotRow", forms, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Issue_recent_list_double_click_starts_edit()
+    public void Receive_issue_recent_list_double_click_starts_edit()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
-        var issueStart = forms.IndexOf("public sealed class IssueView", StringComparison.Ordinal);
+        var viewStart = forms.IndexOf("public sealed class ReceiveIssueView", StringComparison.Ordinal);
         var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
-        Assert.True(issueStart >= 0 && stockStart > issueStart);
-        var issue = forms[issueStart..stockStart];
-        Assert.Contains("MouseDoubleClick", issue, StringComparison.Ordinal);
-        Assert.Contains("BeginEdit", issue, StringComparison.Ordinal);
-        Assert.Contains("Field(\"LOT\", lot)", issue, StringComparison.Ordinal);
-        Assert.Contains("IssueCartLine", issue, StringComparison.Ordinal);
+        Assert.True(viewStart >= 0 && stockStart > viewStart);
+        var view = forms[viewStart..stockStart];
+        Assert.Contains("MouseDoubleClick", view, StringComparison.Ordinal);
+        Assert.Contains("BeginEdit", view, StringComparison.Ordinal);
+        Assert.Contains("Field(\"LOT\", lot)", view, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Receive_registration_omits_lot_expiry_and_voucher_fields()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
-        var receiveStart = forms.IndexOf("public sealed class ReceiveView", StringComparison.Ordinal);
-        var issueStart = forms.IndexOf("public sealed class IssueView", StringComparison.Ordinal);
-        Assert.True(receiveStart >= 0 && issueStart > receiveStart);
-        var receive = forms[receiveStart..issueStart];
-        Assert.DoesNotContain("Field(\"LOT\"", receive, StringComparison.Ordinal);
-        Assert.DoesNotContain("Field(\"유효기간\"", receive, StringComparison.Ordinal);
-        Assert.DoesNotContain("Field(\"증빙번호\"", receive, StringComparison.Ordinal);
-        Assert.DoesNotContain("(\"증빙\", \"증빙\")", receive, StringComparison.Ordinal);
-        Assert.DoesNotContain("(\"LOT\", nameof(CartLine.LOT))", receive, StringComparison.Ordinal);
-        Assert.Contains("LotNumber = null", receive, StringComparison.Ordinal);
-        Assert.Contains("ExpiryDate = null", receive, StringComparison.Ordinal);
+        var viewStart = forms.IndexOf("public sealed class ReceiveIssueView", StringComparison.Ordinal);
+        var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
+        Assert.True(viewStart >= 0 && stockStart > viewStart);
+        var view = forms[viewStart..stockStart];
+        Assert.Contains("LotNumber = null", view, StringComparison.Ordinal);
+        Assert.Contains("ExpiryDate = null", view, StringComparison.Ordinal);
+        Assert.Contains("Field(\"공급업체\", supplier)", view, StringComparison.Ordinal);
+        Assert.Contains("Field(\"LOT\", lot)", view, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -217,6 +244,7 @@ public class ShellLayoutTests
     {
         Assert.Equal("출고", ShellPages.Title("issue"));
         Assert.Equal("출고", ShellPages.NavLabel("issue"));
+        Assert.Equal("입출고", ShellPages.NavLabel("receive_issue"));
         Assert.DoesNotContain("사용 추이", ShellPages.Hint("dashboard"), StringComparison.Ordinal);
         Assert.Contains("출고 추이", ShellPages.Hint("dashboard"), StringComparison.Ordinal);
     }
@@ -224,9 +252,6 @@ public class ShellLayoutTests
     [Fact]
     public void Stats_filters_apply_immediately_and_support_period_trend()
     {
-        // User report: changing 기간/집계 in 통계·보고서 looked like it "did not filter" because
-        // the table only refreshed on the 적용 button click, and the table never showed which
-        // period a row belonged to, so 월별/부서별 changes were invisible until 적용 was pressed.
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         Assert.Contains("dimension.SelectionChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
         Assert.Contains("anchor.SelectedDateChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);

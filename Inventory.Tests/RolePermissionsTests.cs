@@ -68,9 +68,10 @@ public class RolePermissionsTests
     {
         var tags = ShellPages.VisibleTags(RolePermissions.For(UserRole.DepartmentUser));
         Assert.Contains("dashboard", tags);
-        Assert.Contains("issue", tags);
+        Assert.Contains("receive_issue", tags);
         Assert.Contains("stock", tags);
         Assert.DoesNotContain("receive", tags);
+        Assert.DoesNotContain("issue", tags);
         Assert.DoesNotContain("close", tags);
         Assert.DoesNotContain("users", tags);
         Assert.DoesNotContain("masters", tags);
@@ -80,10 +81,11 @@ public class RolePermissionsTests
     }
 
     [Fact]
-    public void Purchasing_menu_shows_receive_not_issue()
+    public void Purchasing_menu_shows_receive_issue_not_separate_tabs()
     {
         var tags = ShellPages.VisibleTags(RolePermissions.For(UserRole.Purchasing));
-        Assert.Contains("receive", tags);
+        Assert.Contains("receive_issue", tags);
+        Assert.DoesNotContain("receive", tags);
         Assert.DoesNotContain("issue", tags);
         Assert.DoesNotContain("users", tags);
         Assert.DoesNotContain("close", tags);

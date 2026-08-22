@@ -14,83 +14,232 @@ using System.Windows.Media;
 
 namespace Inventory.App.Views;
 
-public sealed class ReceiveView : WorkspaceView
+public enum VoucherMode { Receive, Issue }
+
+public sealed class ReceiveIssueView : WorkspaceView
 {
+    public sealed record LaunchContext(VoucherMode Mode, string? ItemCode, string? ItemName, bool ExpandForm);
+
+    internal static LaunchContext? PendingLaunch { get; set; }
+
     private sealed class CartLine
     {
         public required string 품목 { get; init; }
         public required string 코드 { get; init; }
         public required decimal 수량 { get; init; }
-        public required decimal 단가 { get; init; }
+        public decimal? 단가 { get; init; }
+        public string? LOT { get; init; }
     }
 
-    private sealed class ReceiptDocRow
+    private sealed class RecentDocRow
     {
-        public required string 입고일 { get; init; }
+        public required string 유형 { get; init; }
+        public required string 일자 { get; init; }
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
         public required int 품목수 { get; init; }
         public required string 상태 { get; init; }
+        public required DocumentType DocType { get; init; }
         public required bool IsCancelled { get; init; }
     }
 
-    public ReceiveView()
+    public ReceiveIssueView()
     {
+        var perms = AppSession.Current?.Permissions ?? RolePermissions.For(UserRole.Viewer);
+        var canReceive = perms.CanReceive;
+        var canIssue = perms.CanIssue;
+        var mode = canReceive ? VoucherMode.Receive : VoucherMode.Issue;
+        LaunchContext? launch = PendingLaunch;
+        if (launch is not null)
+        {
+            mode = launch.Mode;
+            if (mode == VoucherMode.Receive && !canReceive)
+            {
+                mode = VoucherMode.Issue;
+            }
+            else if (mode == VoucherMode.Issue && !canIssue)
+            {
+                mode = VoucherMode.Receive;
+            }
+
+            PendingLaunch = null;
+        }
+
         var pageBanner = CreatePageBanner();
+        var docFilter = "all";
         var date = Date();
         var supplier = Box();
-        var itemSearch = new ItemSearchBox(q =>
+        var dept = Box();
+        var qty = Box("1");
+        var price = Box("0");
+        var lot = Box();
+        var receiveItemSearch = new ItemSearchBox(q =>
         {
             using var db = AppHost.OpenDb();
             var svc = new InventoryService(db, AppHost.Actor);
-            return svc.SearchStockSnapshots(q, take: 20)
-                .Select(UiComponents.StockSuggestion)
+            return svc.SearchStockSnapshots(q, take: 20).Select(UiComponents.StockSuggestion).ToList();
+        });
+        var issueItemSearch = new ItemSearchBox(q =>
+        {
+            using var db = AppHost.OpenDb();
+            var svc = new InventoryService(db, AppHost.Actor);
+            return svc.ItemsAvailableForIssue()
+                .Where(i => i.Code.Contains(q, StringComparison.OrdinalIgnoreCase)
+                            || i.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(i => i.Name)
+                .Take(20)
+                .Select(i => UiComponents.ItemSuggestion(i))
                 .ToList();
         });
         var selectedCode = "";
-        itemSearch.SelectionChanged += s => selectedCode = s?.Code ?? "";
-        var qty = Box("1");
-        var price = Box("0");
+        receiveItemSearch.SelectionChanged += s => selectedCode = s?.Code ?? "";
+        issueItemSearch.SelectionChanged += s =>
+        {
+            selectedCode = s?.Code ?? "";
+            if (s is null || !string.IsNullOrWhiteSpace(dept.Text))
+            {
+                return;
+            }
+
+            using var db = AppHost.OpenDb();
+            var item = db.Items.FirstOrDefault(i => i.Code == s.Code);
+            if (item?.DefaultDepartmentId is { } deptId)
+            {
+                var deptName = db.Departments.FirstOrDefault(d => d.Id == deptId)?.Name;
+                if (!string.IsNullOrWhiteSpace(deptName))
+                {
+                    dept.Text = deptName;
+                }
+            }
+        };
+
+        var itemFieldReceive = Field("품목", receiveItemSearch.Input);
+        var itemFieldIssue = Field("품목", issueItemSearch.Input);
+        var supplierField = Field("공급업체", supplier);
+        var priceField = Field("단가", price);
+        var deptField = Field("사용부서", dept);
+        var lotField = Field("LOT", lot);
+        var dateFieldReceive = Field("입고일", date);
+        var dateFieldIssue = Field("출고일", date);
+        var qtyField = Field("수량", qty);
+
         var cart = new List<CartLine>();
-        DataGrid? cartGrid = null;
         var cartHost = new StackPanel();
-        List<ReceiptDocRow> recent = [];
-        ReceiptDocRow? selectedDoc = null;
+        List<RecentDocRow> recent = [];
+        RecentDocRow? selectedDoc = null;
         DataGrid? recentGrid = null;
         var recentHost = new StackPanel();
+        var recentFilterHost = new StackPanel();
         int? editingId = null;
+        VoucherMode currentMode = mode;
+        var newVoucherExpander = new Expander { IsExpanded = launch?.ExpandForm == true, Margin = new Thickness(0, 0, 0, 0) };
+        Button? saveButton = null;
+
+        void ClearEditBannerOnChange()
+        {
+            if (editingId is not null)
+            {
+                SetBanner(pageBanner, null);
+            }
+        }
+
+        void ResetEditState()
+        {
+            editingId = null;
+            cart.Clear();
+            RenderCart();
+            SetBanner(pageBanner, null);
+        }
+
+        void ApplyModeUi()
+        {
+            var isReceive = currentMode == VoucherMode.Receive;
+            itemFieldReceive.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
+            itemFieldIssue.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
+            dateFieldReceive.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
+            dateFieldIssue.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
+            supplierField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
+            priceField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
+            deptField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
+            lotField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
+            newVoucherExpander.Header = isReceive ? "+ 새 입고" : "+ 새 출고";
+            if (saveButton is not null)
+            {
+                saveButton.Content = isReceive ? "입고 저장" : "출고 저장";
+            }
+        }
+
+        void SwitchMode(VoucherMode next, bool resetForm = true)
+        {
+            if (currentMode == next)
+            {
+                return;
+            }
+
+            currentMode = next;
+            if (resetForm)
+            {
+                ResetEditState();
+            }
+
+            ApplyModeUi();
+        }
 
         void ReloadRecent()
         {
             using var db = AppHost.OpenDb();
             var svc = new InventoryService(db, AppHost.Actor);
-            recent = svc.ListDocumentSummaries(80).Where(d => d.Type == DocumentType.Receipt).Select(d => new ReceiptDocRow
+            recent = svc.ListDocumentSummaries(80).Select(d => new RecentDocRow
             {
-                입고일 = d.DocumentDate.ToString("yyyy-MM-dd"),
+                유형 = d.Type == DocumentType.Receipt ? "입고" : "출고",
+                일자 = d.DocumentDate.ToString("yyyy-MM-dd"),
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
                 품목수 = d.LineCount,
                 상태 = d.IsCancelled ? "삭제됨" : "저장",
+                DocType = d.Type,
                 IsCancelled = d.IsCancelled
             }).ToList();
+            RenderRecentGrid();
+        }
+
+        void RenderRecentGrid()
+        {
             selectedDoc = null;
             recentHost.Children.Clear();
-            if (recent.Count == 0)
+            recentFilterHost.Children.Clear();
+            recentFilterHost.Children.Add(BuildFilterChips(docFilter, id =>
             {
-                recentHost.Children.Add(UiComponents.EmptyState("최근 입고 전표가 없습니다", "품목을 등록한 뒤 입고 저장을 누르세요."));
+                docFilter = id;
+                RenderRecentGrid();
+            }, ("all", "전체"), ("receive", "입고"), ("issue", "출고")));
+
+            var filtered = docFilter switch
+            {
+                "receive" => recent.Where(r => r.DocType == DocumentType.Receipt).ToList(),
+                "issue" => recent.Where(r => r.DocType == DocumentType.Issue).ToList(),
+                _ => recent
+            };
+
+            recentHost.Children.Add(recentFilterHost);
+            if (filtered.Count == 0)
+            {
+                recentHost.Children.Add(UiComponents.EmptyState("최근 전표가 없습니다", "품목을 추가한 뒤 저장하세요."));
+                recentGrid = null;
                 return;
             }
 
-            var next = TableGrid(recent, allowMultiSelect: true,
-                new ColumnSpec("입고일", "입고일"),
+            var next = TableGrid(filtered, allowMultiSelect: true,
+                new ColumnSpec("유형", "유형", Width: 56),
+                new ColumnSpec("일자", "일자"),
                 new ColumnSpec("전표", "전표"),
                 new ColumnSpec("품목", "품목"),
                 new ColumnSpec("품목수", "품목수", ColumnAlign.Right),
                 new ColumnSpec("상태", "상태", Width: 72));
-            next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as ReceiptDocRow;
+            next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as RecentDocRow;
             next.MouseDoubleClick += (_, _) =>
             {
-                if (next.SelectedItem is ReceiptDocRow row)
+                if (next.SelectedItem is RecentDocRow row)
                 {
                     BeginEdit(row);
                 }
@@ -103,12 +252,12 @@ public sealed class ReceiveView : WorkspaceView
             recentHost.Children.Add(editRow);
         }
 
-        List<ReceiptDocRow> SelectedRecentRows()
-            => recentGrid?.SelectedItems.OfType<ReceiptDocRow>().ToList() ?? [];
+        List<RecentDocRow> SelectedRecentRows()
+            => recentGrid?.SelectedItems.OfType<RecentDocRow>().ToList() ?? [];
 
-        void BeginEdit(ReceiptDocRow? fromDoubleClick = null)
+        void BeginEdit(RecentDocRow? fromDoubleClick = null)
         {
-            ReceiptDocRow? target = fromDoubleClick;
+            RecentDocRow? target = fromDoubleClick;
             if (target is null)
             {
                 var selected = SelectedRecentRows();
@@ -134,19 +283,28 @@ public sealed class ReceiveView : WorkspaceView
                 return;
             }
 
+            var requiredMode = target.DocType == DocumentType.Receipt ? VoucherMode.Receive : VoucherMode.Issue;
+            if (requiredMode == VoucherMode.Receive && !canReceive)
+            {
+                SetBanner(pageBanner, "입고 전표 수정 권한이 없습니다.", isError: true);
+                return;
+            }
+
+            if (requiredMode == VoucherMode.Issue && !canIssue)
+            {
+                SetBanner(pageBanner, "출고 전표 수정 권한이 없습니다.", isError: true);
+                return;
+            }
+
             try
             {
                 using var db = AppHost.OpenDb();
                 var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(target.전표);
-                if (detail.Type != DocumentType.Receipt)
-                {
-                    SetBanner(pageBanner, "입고 전표만 수정할 수 있습니다.", isError: true);
-                    return;
-                }
-
+                SwitchMode(requiredMode, resetForm: false);
                 editingId = detail.Id;
                 date.SelectedDate = detail.DocumentDate;
                 supplier.Text = detail.SupplierName ?? "";
+                dept.Text = detail.DepartmentName ?? "";
                 cart.Clear();
                 foreach (var line in detail.Lines)
                 {
@@ -155,385 +313,7 @@ public sealed class ReceiveView : WorkspaceView
                         품목 = line.ItemName,
                         코드 = line.ItemCode,
                         수량 = line.Quantity,
-                        단가 = line.UnitPrice
-                    });
-                }
-
-                RenderCart();
-                if (detail.Lines.Count > 0)
-                {
-                    var first = detail.Lines[0];
-                    selectedCode = first.ItemCode;
-                    itemSearch.Input.Text = first.ItemName;
-                    qty.Text = first.Quantity.ToString(CultureInfo.CurrentCulture);
-                    price.Text = first.UnitPrice.ToString(CultureInfo.CurrentCulture);
-                }
-
-                SetBanner(pageBanner, $"전표 {detail.Id} 수정 중 — 저장하면 기존 전표는 삭제되고 새로 저장됩니다.");
-            }
-            catch (Exception ex)
-            {
-                SetBanner(pageBanner, $"원인: {AppLog.Sanitize(ex.Message)}", isError: true);
-            }
-        }
-
-        void DeleteSelected()
-        {
-            var selected = SelectedRecentRows();
-            if (selected.Count == 0)
-            {
-                SetBanner(pageBanner, "목록에서 전표를 고르세요.", isError: true);
-                return;
-            }
-
-            var toDelete = selected.Where(d => !d.IsCancelled).ToList();
-            if (toDelete.Count == 0)
-            {
-                SetBanner(pageBanner, "이미 삭제된 전표입니다.", isError: true);
-                return;
-            }
-
-            var confirm = toDelete.Count == 1
-                ? $"전표 {toDelete[0].전표}를 삭제할까요? 재고는 원래대로 돌아갑니다."
-                : $"선택한 {toDelete.Count}건의 전표를 삭제할까요? 재고는 원래대로 돌아갑니다.";
-            if (MessageBox.Show(
-                    confirm,
-                    ProductInfo.DisplayName,
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning) != MessageBoxResult.Yes)
-            {
-                return;
-            }
-
-            try
-            {
-                var ids = toDelete.Select(d => d.전표).ToList();
-                SetBanner(pageBanner, AppHost.Run((_, s) =>
-                {
-                    foreach (var id in ids)
-                    {
-                        s.DeleteDocument(id);
-                    }
-
-                    return ids.Count == 1
-                        ? "삭제 완료. 재고는 원래대로 돌아갑니다."
-                        : $"{ids.Count}건 삭제 완료. 재고는 원래대로 돌아갑니다.";
-                }));
-                if (editingId is { } editId && ids.Contains(editId))
-                {
-                    editingId = null;
-                }
-
-                ReloadRecent();
-            }
-            catch (Exception ex)
-            {
-                SetBanner(pageBanner, $"원인: {AppLog.Sanitize(ex.Message)}", isError: true);
-            }
-        }
-
-        void RenderCart()
-        {
-            cartHost.Children.Clear();
-            if (cart.Count == 0)
-            {
-                cartHost.Children.Add(UiComponents.EmptyState("이번 전표에 품목이 없습니다", "품목을 고른 뒤 「품목 추가」를 누르세요."));
-                cartGrid = null;
-                return;
-            }
-
-            cartGrid = TableGrid(cart.ToList(),
-                new ColumnSpec("품목", nameof(CartLine.품목)),
-                new ColumnSpec("코드", nameof(CartLine.코드)),
-                new ColumnSpec("수량", nameof(CartLine.수량), ColumnAlign.Right),
-                new ColumnSpec("단가", nameof(CartLine.단가), ColumnAlign.Right));
-            cartHost.Children.Add(cartGrid);
-        }
-
-        var add = Primary("품목 추가", (_, _) =>
-        {
-            if (!itemSearch.TryGetSelection(out var picked) || picked is null)
-            {
-                SetBanner(pageBanner, "품목을 선택 또는 입력하세요.", isError: true);
-                return;
-            }
-
-            if (!decimal.TryParse(qty.Text, CultureInfo.CurrentCulture, out var qv) || qv <= 0
-                || !decimal.TryParse(price.Text, CultureInfo.CurrentCulture, out var pv) || pv < 0)
-            {
-                SetBanner(pageBanner, "수량과 단가를 숫자로 입력하세요.", isError: true);
-                return;
-            }
-
-            selectedCode = picked.Code;
-            cart.Add(new CartLine
-            {
-                품목 = picked.Name,
-                코드 = picked.Code,
-                수량 = qv,
-                단가 = pv
-            });
-            SetBanner(pageBanner, null);
-            RenderCart();
-        });
-
-        var save = Primary("입고 저장", (_, _) =>
-        {
-            if (cart.Count == 0)
-            {
-                SetBanner(pageBanner, "품목을 등록한 다음 저장하세요.", isError: true);
-                return;
-            }
-
-            try
-            {
-                SetBanner(pageBanner, AppHost.Run((_, svc) =>
-                {
-                    if (editingId is { } editId)
-                    {
-                        svc.DeleteDocument(editId);
-                    }
-
-                    int? supplierId = null;
-                    if (!string.IsNullOrWhiteSpace(supplier.Text))
-                    {
-                        var found = svc.SearchSuppliers(supplier.Text).FirstOrDefault()
-                                    ?? svc.CreateSupplier(supplier.Text);
-                        supplierId = found.Id;
-                    }
-
-                    var doc = svc.Receive(
-                        date.SelectedDate ?? DateTime.Today,
-                        supplierId,
-                        null,
-                        cart.Select(l => new ReceiptLineRequest
-                        {
-                            ItemCode = l.코드,
-                            Quantity = l.수량,
-                            UnitPrice = l.단가,
-                            LotNumber = null,
-                            ExpiryDate = null
-                        }).ToList());
-                    cart.Clear();
-                    RenderCart();
-                    var wasEdit = editingId.HasValue;
-                    editingId = null;
-                    return wasEdit
-                        ? $"수정 저장됨. 전표 {doc.Id}"
-                        : doc.DuplicateWarning
-                            ? "저장됨. 경고: 같은 공급업체·증빙번호 입고가 이미 있습니다."
-                            : $"저장됨. 전표 {doc.Id}";
-                }));
-                ReloadRecent();
-            }
-            catch (Exception ex)
-            {
-                SetBanner(pageBanner, $"원인: {AppLog.Sanitize(ex.Message)}", isError: true);
-            }
-        });
-
-        var form = FormRow(
-            Field("품목", itemSearch.Input),
-            Field("입고일", date),
-            Field("공급업체", supplier),
-            Field("수량", qty),
-            Field("단가", price));
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
-        actions.Children.Add(add);
-        actions.Children.Add(save);
-        var register = new StackPanel();
-        register.Children.Add(form);
-        register.Children.Add(actions);
-
-        Content = PageRoot(pageBanner,
-            Section("등록", register),
-            Section("이번 전표 품목", cartHost),
-            Section("최근 입고", recentHost));
-        RenderCart();
-        ReloadRecent();
-    }
-}
-
-public sealed class IssueView : WorkspaceView
-{
-    private sealed class IssueCartLine
-    {
-        public required string 품목 { get; init; }
-        public required string 코드 { get; init; }
-        public required decimal 수량 { get; init; }
-        public string? LOT { get; init; }
-    }
-
-    private sealed class IssueDocRow
-    {
-        public required string 출고일 { get; init; }
-        public required int 전표 { get; init; }
-        public required string 품목 { get; init; }
-        public string? FirstItemName { get; init; }
-        public required int 품목수 { get; init; }
-        public required string 상태 { get; init; }
-        public required bool IsCancelled { get; init; }
-    }
-
-    public IssueView()
-    {
-        var pageBanner = CreatePageBanner();
-        var date = Date();
-        var dept = Box();
-        var itemSearch = new ItemSearchBox(q =>
-        {
-            using var db = AppHost.OpenDb();
-            var svc = new InventoryService(db, AppHost.Actor);
-            return svc.ItemsAvailableForIssue()
-                .Where(i => i.Code.Contains(q, StringComparison.OrdinalIgnoreCase)
-                            || i.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(i => i.Name)
-                .Take(20)
-                .Select(i => UiComponents.ItemSuggestion(i))
-                .ToList();
-        });
-        var selectedCode = "";
-        itemSearch.SelectionChanged += s =>
-        {
-            selectedCode = s?.Code ?? "";
-            if (s is null || !string.IsNullOrWhiteSpace(dept.Text))
-            {
-                return;
-            }
-
-            using var db = AppHost.OpenDb();
-            var item = db.Items.FirstOrDefault(i => i.Code == s.Code);
-            if (item?.DefaultDepartmentId is { } deptId)
-            {
-                var deptName = db.Departments.FirstOrDefault(d => d.Id == deptId)?.Name;
-                if (!string.IsNullOrWhiteSpace(deptName))
-                {
-                    dept.Text = deptName;
-                }
-            }
-        };
-        var qty = Box("1");
-        var lot = Box();
-        var cart = new List<IssueCartLine>();
-        var cartHost = new StackPanel();
-        List<IssueDocRow> rows = [];
-        IssueDocRow? selectedDoc = null;
-        DataGrid? grid = null;
-        var recentHost = new StackPanel();
-        int? editingId = null;
-
-        void RenderCart()
-        {
-            cartHost.Children.Clear();
-            if (cart.Count == 0)
-            {
-                cartHost.Children.Add(UiComponents.EmptyState("이번 전표에 품목이 없습니다", "품목을 고른 뒤 「품목 추가」를 누르세요."));
-                return;
-            }
-
-            cartHost.Children.Add(TableGrid(cart.ToList(),
-                new ColumnSpec("품목", nameof(IssueCartLine.품목)),
-                new ColumnSpec("코드", nameof(IssueCartLine.코드)),
-                new ColumnSpec("수량", nameof(IssueCartLine.수량), ColumnAlign.Right),
-                new ColumnSpec("LOT", nameof(IssueCartLine.LOT))));
-        }
-
-        void ReloadRecent()
-        {
-            using var db = AppHost.OpenDb();
-            var svc = new InventoryService(db, AppHost.Actor);
-            rows = svc.ListDocumentSummaries(80).Where(d => d.Type == DocumentType.Issue).Select(d => new IssueDocRow
-            {
-                출고일 = d.DocumentDate.ToString("yyyy-MM-dd"),
-                전표 = d.Id,
-                품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
-                FirstItemName = d.FirstItemName,
-                품목수 = d.LineCount,
-                상태 = d.IsCancelled ? "삭제됨" : "저장",
-                IsCancelled = d.IsCancelled
-            }).ToList();
-            selectedDoc = null;
-            recentHost.Children.Clear();
-            if (rows.Count == 0)
-            {
-                recentHost.Children.Add(UiComponents.EmptyState("최근 출고 전표가 없습니다", "품목을 추가한 뒤 출고 저장을 누르세요."));
-                return;
-            }
-
-            var next = TableGrid(rows, allowMultiSelect: true,
-                new ColumnSpec("출고일", "출고일"),
-                new ColumnSpec("전표", "전표"),
-                new ColumnSpec("품목", "품목"),
-                new ColumnSpec("품목수", "품목수", ColumnAlign.Right),
-                new ColumnSpec("상태", "상태", Width: 72));
-            next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as IssueDocRow;
-            next.MouseDoubleClick += (_, _) =>
-            {
-                if (next.SelectedItem is IssueDocRow row)
-                {
-                    BeginEdit(row);
-                }
-            };
-            grid = next;
-            var editRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-            editRow.Children.Add(Primary("수정", (_, _) => BeginEdit()));
-            editRow.Children.Add(Danger("삭제", (_, _) => DeleteSelected()));
-            recentHost.Children.Add(next);
-            recentHost.Children.Add(editRow);
-        }
-
-        List<IssueDocRow> SelectedRecentRows()
-            => grid?.SelectedItems.OfType<IssueDocRow>().ToList() ?? [];
-
-        void BeginEdit(IssueDocRow? fromDoubleClick = null)
-        {
-            IssueDocRow? target = fromDoubleClick;
-            if (target is null)
-            {
-                var selected = SelectedRecentRows();
-                if (selected.Count == 0)
-                {
-                    SetBanner(pageBanner, "목록에서 전표를 고르세요.", isError: true);
-                    return;
-                }
-
-                if (selected.Count > 1)
-                {
-                    SetBanner(pageBanner, "수정은 한 건만 선택할 수 있습니다.", isError: true);
-                    return;
-                }
-
-                target = selected[0];
-            }
-
-            selectedDoc = target;
-            if (target.IsCancelled)
-            {
-                SetBanner(pageBanner, "이미 삭제된 전표입니다.", isError: true);
-                return;
-            }
-
-            try
-            {
-                using var db = AppHost.OpenDb();
-                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(target.전표);
-                if (detail.Type != DocumentType.Issue)
-                {
-                    SetBanner(pageBanner, "출고 전표만 수정할 수 있습니다.", isError: true);
-                    return;
-                }
-
-                editingId = detail.Id;
-                date.SelectedDate = detail.DocumentDate;
-                dept.Text = detail.DepartmentName ?? "";
-                cart.Clear();
-                foreach (var line in detail.Lines)
-                {
-                    cart.Add(new IssueCartLine
-                    {
-                        품목 = line.ItemName,
-                        코드 = line.ItemCode,
-                        수량 = line.Quantity,
+                        단가 = detail.Type == DocumentType.Receipt ? line.UnitPrice : null,
                         LOT = line.LotNumber
                     });
                 }
@@ -543,11 +323,21 @@ public sealed class IssueView : WorkspaceView
                 {
                     var first = detail.Lines[0];
                     selectedCode = first.ItemCode;
-                    itemSearch.Input.Text = first.ItemName;
+                    if (detail.Type == DocumentType.Receipt)
+                    {
+                        receiveItemSearch.SetSelection(first.ItemCode, first.ItemName);
+                        price.Text = first.UnitPrice.ToString(CultureInfo.CurrentCulture);
+                    }
+                    else
+                    {
+                        issueItemSearch.SetSelection(first.ItemCode, first.ItemName);
+                        lot.Text = first.LotNumber ?? "";
+                    }
+
                     qty.Text = first.Quantity.ToString(CultureInfo.CurrentCulture);
-                    lot.Text = first.LotNumber ?? "";
                 }
 
+                newVoucherExpander.IsExpanded = true;
                 SetBanner(pageBanner, $"전표 {detail.Id} 수정 중 — 저장하면 기존 전표는 삭제되고 새로 저장됩니다.");
             }
             catch (Exception ex)
@@ -611,9 +401,37 @@ public sealed class IssueView : WorkspaceView
             }
         }
 
+        void RenderCart()
+        {
+            cartHost.Children.Clear();
+            if (cart.Count == 0)
+            {
+                cartHost.Children.Add(UiComponents.EmptyState("이번 전표에 품목이 없습니다", "품목을 고른 뒤 「품목 추가」를 누르세요."));
+                return;
+            }
+
+            if (currentMode == VoucherMode.Receive)
+            {
+                cartHost.Children.Add(TableGrid(cart.ToList(),
+                    new ColumnSpec("품목", nameof(CartLine.품목)),
+                    new ColumnSpec("코드", nameof(CartLine.코드)),
+                    new ColumnSpec("수량", nameof(CartLine.수량), ColumnAlign.Right),
+                    new ColumnSpec("단가", nameof(CartLine.단가), ColumnAlign.Right)));
+            }
+            else
+            {
+                cartHost.Children.Add(TableGrid(cart.ToList(),
+                    new ColumnSpec("품목", nameof(CartLine.품목)),
+                    new ColumnSpec("코드", nameof(CartLine.코드)),
+                    new ColumnSpec("수량", nameof(CartLine.수량), ColumnAlign.Right),
+                    new ColumnSpec("LOT", nameof(CartLine.LOT))));
+            }
+        }
+
         var add = Primary("품목 추가", (_, _) =>
         {
-            if (!itemSearch.TryGetSelection(out var picked) || picked is null)
+            ItemSearchBox search = currentMode == VoucherMode.Receive ? receiveItemSearch : issueItemSearch;
+            if (!search.TryGetSelection(out var picked) || picked is null)
             {
                 SetBanner(pageBanner, "품목을 선택 또는 입력하세요.", isError: true);
                 return;
@@ -625,19 +443,34 @@ public sealed class IssueView : WorkspaceView
                 return;
             }
 
-            selectedCode = picked.Code;
-            cart.Add(new IssueCartLine
+            if (currentMode == VoucherMode.Receive)
             {
-                품목 = picked.Name,
-                코드 = picked.Code,
-                수량 = qv,
-                LOT = string.IsNullOrWhiteSpace(lot.Text) ? null : lot.Text.Trim()
-            });
+                if (!decimal.TryParse(price.Text, CultureInfo.CurrentCulture, out var pv) || pv < 0)
+                {
+                    SetBanner(pageBanner, "수량과 단가를 숫자로 입력하세요.", isError: true);
+                    return;
+                }
+
+                selectedCode = picked.Code;
+                cart.Add(new CartLine { 품목 = picked.Name, 코드 = picked.Code, 수량 = qv, 단가 = pv });
+            }
+            else
+            {
+                selectedCode = picked.Code;
+                cart.Add(new CartLine
+                {
+                    품목 = picked.Name,
+                    코드 = picked.Code,
+                    수량 = qv,
+                    LOT = string.IsNullOrWhiteSpace(lot.Text) ? null : lot.Text.Trim()
+                });
+            }
+
             SetBanner(pageBanner, null);
             RenderCart();
         });
 
-        var save = Primary("출고 저장", (_, _) =>
+        saveButton = Primary("입고 저장", (_, _) =>
         {
             if (cart.Count == 0)
             {
@@ -654,6 +487,39 @@ public sealed class IssueView : WorkspaceView
                         svc.DeleteDocument(editId);
                     }
 
+                    if (currentMode == VoucherMode.Receive)
+                    {
+                        int? supplierId = null;
+                        if (!string.IsNullOrWhiteSpace(supplier.Text))
+                        {
+                            var found = svc.SearchSuppliers(supplier.Text).FirstOrDefault()
+                                        ?? svc.CreateSupplier(supplier.Text);
+                            supplierId = found.Id;
+                        }
+
+                        var doc = svc.Receive(
+                            date.SelectedDate ?? DateTime.Today,
+                            supplierId,
+                            null,
+                            cart.Select(l => new ReceiptLineRequest
+                            {
+                                ItemCode = l.코드,
+                                Quantity = l.수량,
+                                UnitPrice = l.단가 ?? 0,
+                                LotNumber = null,
+                                ExpiryDate = null
+                            }).ToList());
+                        cart.Clear();
+                        RenderCart();
+                        var wasEdit = editingId.HasValue;
+                        editingId = null;
+                        return wasEdit
+                            ? $"수정 저장됨. 전표 {doc.Id}"
+                            : doc.DuplicateWarning
+                                ? "저장됨. 경고: 같은 공급업체·증빙번호 입고가 이미 있습니다."
+                                : $"저장됨. 전표 {doc.Id}";
+                    }
+
                     int? deptId = null;
                     if (!string.IsNullOrWhiteSpace(dept.Text))
                     {
@@ -662,7 +528,7 @@ public sealed class IssueView : WorkspaceView
                         deptId = found.Id;
                     }
 
-                    var doc = svc.Issue(
+                    var issueDoc = svc.Issue(
                         date.SelectedDate ?? DateTime.Today,
                         deptId,
                         cart.Select(l => new IssueLineRequest
@@ -673,9 +539,9 @@ public sealed class IssueView : WorkspaceView
                         }).ToList());
                     cart.Clear();
                     RenderCart();
-                    var wasEdit = editingId.HasValue;
+                    var wasIssueEdit = editingId.HasValue;
                     editingId = null;
-                    return wasEdit ? $"수정 저장됨. 전표 {doc.Id}" : $"저장됨. 전표 {doc.Id}";
+                    return wasIssueEdit ? $"수정 저장됨. 전표 {issueDoc.Id}" : $"저장됨. 전표 {issueDoc.Id}";
                 }));
                 ReloadRecent();
             }
@@ -685,24 +551,85 @@ public sealed class IssueView : WorkspaceView
             }
         });
 
-        var register = new StackPanel();
-        register.Children.Add(FormRow(
-            Field("품목", itemSearch.Input),
-            Field("출고일", date),
-            Field("사용부서", dept),
-            Field("수량", qty),
-            Field("LOT", lot)));
+        var modeToggle = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+        if (canReceive)
+        {
+            var receiveRadio = new RadioButton
+            {
+                Content = "입고",
+                GroupName = "VoucherMode",
+                IsChecked = currentMode == VoucherMode.Receive,
+                Margin = new Thickness(0, 0, 16, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            receiveRadio.Checked += (_, _) =>
+            {
+                if (receiveRadio.IsChecked == true)
+                {
+                    SwitchMode(VoucherMode.Receive);
+                }
+            };
+            modeToggle.Children.Add(receiveRadio);
+        }
+
+        if (canIssue)
+        {
+            var issueRadio = new RadioButton
+            {
+                Content = "출고",
+                GroupName = "VoucherMode",
+                IsChecked = currentMode == VoucherMode.Issue,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            issueRadio.Checked += (_, _) =>
+            {
+                if (issueRadio.IsChecked == true)
+                {
+                    SwitchMode(VoucherMode.Issue);
+                }
+            };
+            modeToggle.Children.Add(issueRadio);
+        }
+
+        supplier.TextChanged += (_, _) => ClearEditBannerOnChange();
+        dept.TextChanged += (_, _) => ClearEditBannerOnChange();
+        qty.TextChanged += (_, _) => ClearEditBannerOnChange();
+        price.TextChanged += (_, _) => ClearEditBannerOnChange();
+        lot.TextChanged += (_, _) => ClearEditBannerOnChange();
+        date.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
+
+        var form = FormRow(itemFieldReceive, itemFieldIssue, dateFieldReceive, dateFieldIssue, supplierField, deptField, qtyField, priceField, lotField);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         actions.Children.Add(add);
-        actions.Children.Add(save);
-        register.Children.Add(actions);
+        actions.Children.Add(saveButton);
+        var newVoucherBody = new StackPanel();
+        newVoucherBody.Children.Add(modeToggle);
+        newVoucherBody.Children.Add(form);
+        newVoucherBody.Children.Add(cartHost);
+        newVoucherBody.Children.Add(actions);
+        newVoucherExpander.Content = newVoucherBody;
 
         Content = PageRoot(pageBanner,
-            Section("등록", register),
-            Section("이번 전표 품목", cartHost),
-            Section("최근 출고", recentHost));
+            Section("새 전표", newVoucherExpander),
+            Section("최근 전표", recentHost));
+        ApplyModeUi();
         RenderCart();
         ReloadRecent();
+
+        if (launch?.ItemCode is { } code && launch.ItemName is { } name)
+        {
+            if (currentMode == VoucherMode.Receive)
+            {
+                receiveItemSearch.SetSelection(code, name);
+            }
+            else
+            {
+                issueItemSearch.SetSelection(code, name);
+            }
+
+            selectedCode = code;
+            newVoucherExpander.IsExpanded = launch.ExpandForm;
+        }
     }
 }
 
@@ -741,9 +668,13 @@ public sealed class StockView : WorkspaceView
         var gridHost = new StackPanel();
         var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
         var pageText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
-        var lotHost = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        var lotHost = new StackPanel();
+        var lotExpander = new Expander { Header = "LOT 상세", IsExpanded = false, Margin = new Thickness(0, 12, 0, 0) };
+        lotExpander.Content = lotHost;
         DataGrid? grid = null;
         var chipsHost = new StackPanel();
+        StockRow? selectedStock = null;
+        var perms = AppSession.Current?.Permissions ?? RolePermissions.For(UserRole.Viewer);
 
         void ShowLots(string code)
         {
@@ -762,7 +693,7 @@ public sealed class StockView : WorkspaceView
                     IsExpired = days is not null && days < 0
                 };
             }).ToList();
-            lotHost.Children.Add(new TextBlock { Text = "LOT 상세 (붉은 배경은 유효기간이 지난 LOT입니다)", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
+            lotHost.Children.Add(new TextBlock { Text = "붉은 배경은 유효기간이 지난 LOT입니다", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
             var lotGrid = TableGrid(lots,
                 new ColumnSpec("LOT", "LOT"),
                 new ColumnSpec("잔량", "잔량", ColumnAlign.Right),
@@ -776,6 +707,7 @@ public sealed class StockView : WorkspaceView
                 }
             };
             lotHost.Children.Add(lotGrid);
+            lotExpander.IsExpanded = true;
         }
 
         void Render()
@@ -801,6 +733,7 @@ public sealed class StockView : WorkspaceView
             {
                 if (next.SelectedItem is StockRow row)
                 {
+                    selectedStock = row;
                     ShowLots(row.코드);
                 }
             };
@@ -858,8 +791,12 @@ public sealed class StockView : WorkspaceView
             }).ToList();
             page = 1;
             lotHost.Children.Clear();
+            lotExpander.IsExpanded = false;
+            selectedStock = null;
             Render();
         }
+
+        itemSearch.SelectionChanged += _ => Reload();
 
         var filters = new StackPanel();
         filters.Children.Add(FormRow(Field("품목", itemSearch.Input)));
@@ -878,7 +815,47 @@ public sealed class StockView : WorkspaceView
         var listBody = new StackPanel();
         listBody.Children.Add(gridHost);
         listBody.Children.Add(Pager(count, pageText, () => { page--; Render(); }, () => { page++; Render(); }));
-        listBody.Children.Add(lotHost);
+        var shortcutRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        if (perms.CanReceive)
+        {
+            shortcutRow.Children.Add(Primary("이 품목 입고", (_, _) =>
+            {
+                if (selectedStock is null)
+                {
+                    SetBanner(pageBanner, "재고 목록에서 품목을 고르세요.", isError: true);
+                    return;
+                }
+
+                if (Application.Current?.MainWindow is MainWindow main)
+                {
+                    main.OpenReceiveIssue(VoucherMode.Receive, selectedStock.코드, selectedStock.품목);
+                }
+            }));
+        }
+
+        if (perms.CanIssue)
+        {
+            shortcutRow.Children.Add(Primary("이 품목 출고", (_, _) =>
+            {
+                if (selectedStock is null)
+                {
+                    SetBanner(pageBanner, "재고 목록에서 품목을 고르세요.", isError: true);
+                    return;
+                }
+
+                if (Application.Current?.MainWindow is MainWindow main)
+                {
+                    main.OpenReceiveIssue(VoucherMode.Issue, selectedStock.코드, selectedStock.품목);
+                }
+            }));
+        }
+
+        if (shortcutRow.Children.Count > 0)
+        {
+            listBody.Children.Add(shortcutRow);
+        }
+
+        listBody.Children.Add(lotExpander);
 
         Content = PageRoot(pageBanner,
             Section("검색·필터", filters),

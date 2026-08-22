@@ -199,6 +199,15 @@ public sealed class ItemSearchBox
                      ?? new Suggestion(SelectedCode, _input.Text.Trim(), "");
         return true;
     }
+
+    public void SetSelection(string code, string name, string stockLabel = "")
+    {
+        _suppressTextChanged = true;
+        _input.Text = name;
+        _suppressTextChanged = false;
+        SelectedCode = code;
+        SelectionChanged?.Invoke(new Suggestion(code, name, stockLabel));
+    }
 }
 
 public static class UiComponents

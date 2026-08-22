@@ -6,8 +6,7 @@ public static class ShellPages
     [
         "dashboard",
         "stock",
-        "receive",
-        "issue",
+        "receive_issue",
         "stats",
         "users",
         "backup",
@@ -18,6 +17,7 @@ public static class ShellPages
     {
         "dashboard" => "대시보드",
         "stock" => "재고현황",
+        "receive_issue" => "입출고",
         "receive" => "입고",
         "issue" => "출고",
         "stats" => "통계·보고서",
@@ -31,6 +31,7 @@ public static class ShellPages
     {
         "dashboard" => "품목을 선택하면 출고 추이를 비교합니다.",
         "stock" => "로컬 · 오프라인",
+        "receive_issue" => "입고·출고 전표를 한 화면에서 등록합니다.",
         "receive" => "품목을 이름으로 고른 뒤 담아 저장합니다.",
         "issue" => "재고는 의원 한 곳입니다. 부서는 기록만 남깁니다.",
         "stats" => "연도가 다른 같은 달은 합치지 않습니다.",
@@ -42,14 +43,14 @@ public static class ShellPages
 
     public static readonly IReadOnlyList<string> NavOrder =
     [
-        "receive", "issue", "stock", "stats",
+        "receive_issue", "stock", "stats",
         "dashboard", "users", "backup", "settings"
     ];
 
     /// <summary>Top navigation groups (tags filtered by <see cref="NavOrder"/> and <see cref="CanSee"/>).</summary>
     public static readonly IReadOnlyList<(string GroupLabel, IReadOnlyList<string> Tags)> NavGroups =
     [
-        ("업무", ["receive", "issue", "stock"]),
+        ("업무", ["receive_issue", "stock"]),
         ("분석", ["dashboard", "stats"]),
         ("관리", ["backup", "settings", "users"])
     ];
@@ -76,6 +77,7 @@ public static class ShellPages
     {
         "dashboard" => "대시보드",
         "stock" => "재고",
+        "receive_issue" => "입출고",
         "receive" => "입고",
         "issue" => "출고",
         "stats" => "통계",
@@ -89,6 +91,7 @@ public static class ShellPages
     {
         "dashboard" => flags.CanViewDashboard,
         "stock" => flags.CanViewStock,
+        "receive_issue" => flags.CanReceive || flags.CanIssue,
         "receive" => flags.CanReceive,
         "issue" => flags.CanIssue,
         "stats" => flags.CanViewReports,
@@ -96,6 +99,13 @@ public static class ShellPages
         "backup" => flags.CanBackup,
         "settings" => flags.CanChangeSettings,
         _ => false
+    };
+
+    /// <summary>Maps legacy menu tags to the unified receive/issue screen.</summary>
+    public static string NormalizeTag(string tag) => tag switch
+    {
+        "receive" or "issue" => "receive_issue",
+        _ => tag
     };
 
     public static IReadOnlyList<string> VisibleTags(PermissionFlags flags) =>
