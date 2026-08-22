@@ -46,6 +46,32 @@ public static class ShellPages
         "dashboard", "users", "backup", "settings"
     ];
 
+    /// <summary>Top navigation groups (tags filtered by <see cref="NavOrder"/> and <see cref="CanSee"/>).</summary>
+    public static readonly IReadOnlyList<(string GroupLabel, IReadOnlyList<string> Tags)> NavGroups =
+    [
+        ("업무", ["receive", "issue", "stock"]),
+        ("분석", ["dashboard", "stats"]),
+        ("관리", ["backup", "settings", "users"])
+    ];
+
+    public static IEnumerable<string> OrderedTagsInGroup(string groupLabel, PermissionFlags flags)
+    {
+        var group = NavGroups.FirstOrDefault(g => g.GroupLabel == groupLabel);
+        if (group.Tags.Count == 0)
+        {
+            yield break;
+        }
+
+        var allowed = group.Tags.ToHashSet(StringComparer.Ordinal);
+        foreach (var tag in NavOrder)
+        {
+            if (allowed.Contains(tag) && CanSee(tag, flags))
+            {
+                yield return tag;
+            }
+        }
+    }
+
     public static string NavLabel(string tag) => tag switch
     {
         "dashboard" => "대시보드",

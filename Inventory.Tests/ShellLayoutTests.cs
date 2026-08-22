@@ -45,11 +45,27 @@ public class ShellLayoutTests
         var xaml = ReadRepoFile("Inventory.App", "MainWindow.xaml");
         Assert.Contains("x:Name=\"PageTitle\"", xaml);
         Assert.Contains("x:Name=\"NavPanel\"", xaml);
+        Assert.Contains("스프링의원", xaml, StringComparison.Ordinal);
+        Assert.Contains("재고관리", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ShortcutHint\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StatusBarLeft\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"MenuList\"", xaml);
         var titleAt = xaml.IndexOf("x:Name=\"PageTitle\"", StringComparison.Ordinal);
         var scrollAt = xaml.IndexOf("<ScrollViewer", StringComparison.Ordinal);
         Assert.True(titleAt >= 0);
         Assert.True(scrollAt < 0 || titleAt < scrollAt);
+    }
+
+    [Fact]
+    public void Nav_groups_follow_shell_pages_order()
+    {
+        Assert.Equal(3, ShellPages.NavGroups.Count);
+        Assert.Equal("업무", ShellPages.NavGroups[0].GroupLabel);
+        Assert.Equal("분석", ShellPages.NavGroups[1].GroupLabel);
+        Assert.Equal("관리", ShellPages.NavGroups[2].GroupLabel);
+        var flags = RolePermissions.For(UserRole.Administrator);
+        var work = ShellPages.OrderedTagsInGroup("업무", flags).ToList();
+        Assert.Equal(["receive", "issue", "stock"], work);
     }
 
     [Fact]
@@ -63,6 +79,10 @@ public class ShellLayoutTests
         Assert.Contains("예측 수량", workspace, StringComparison.Ordinal);
         Assert.Contains("겹치지 않습니다", workspace, StringComparison.Ordinal);
         Assert.Contains("ReplaceSample", workspace, StringComparison.Ordinal);
+        Assert.Contains("Expander", workspace, StringComparison.Ordinal);
+        Assert.Contains("개발자", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("테스트 데이터 생성 (품목 1,000", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("샘플 데이터를 다양하게 다시 만들기", workspace, StringComparison.Ordinal);
         Assert.DoesNotContain("품목은 다시 만들지 않습니다", workspace, StringComparison.Ordinal);
         Assert.DoesNotContain("그래도 거래를 추가할까요?", workspace, StringComparison.Ordinal);
         Assert.Contains("기존 품목·입고·출고를 모두 삭제한 뒤", workspace, StringComparison.Ordinal);
@@ -93,9 +113,16 @@ public class ShellLayoutTests
         Assert.DoesNotContain("Views.ReorderView", mainWindow, StringComparison.Ordinal);
 
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var workspace = ReadRepoFile("Inventory.App", "Views", "WorkspaceViews.cs");
         Assert.DoesNotContain("선택 전표 취소", forms, StringComparison.Ordinal);
         Assert.Contains("Primary(\"수정\"", forms, StringComparison.Ordinal);
         Assert.Contains("Danger(\"삭제\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Danger(\"복원\"", workspace, StringComparison.Ordinal);
+        Assert.Contains("ItemSearchBox", forms, StringComparison.Ordinal);
+        Assert.Contains("Section(\"이번 전표 품목\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Section(\"최근 입고\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Section(\"최근 출고\"", forms, StringComparison.Ordinal);
+        Assert.Contains("출고 저장", forms, StringComparison.Ordinal);
         Assert.Contains("GetDocumentDetail", forms, StringComparison.Ordinal);
         Assert.Contains("DeleteDocument", forms, StringComparison.Ordinal);
         Assert.Contains("BeginEdit", forms, StringComparison.Ordinal);
@@ -132,15 +159,12 @@ public class ShellLayoutTests
         Assert.Contains("검색·필터", forms, StringComparison.Ordinal);
         Assert.Contains("nameof(StockRow.현재고)", forms, StringComparison.Ordinal);
         Assert.Contains("nameof(StockRow.상태)", forms, StringComparison.Ordinal);
-        Assert.Contains("Btn(\"전체\"", forms, StringComparison.Ordinal);
-        Assert.Contains("Field(\"품목\", query)", forms, StringComparison.Ordinal);
+        Assert.Contains("BuildFilterChips", forms, StringComparison.Ordinal);
+        Assert.Contains("Field(\"품목\", itemSearch.Input)", forms, StringComparison.Ordinal);
         Assert.Contains("Primary(\"적용\"", forms, StringComparison.Ordinal);
         Assert.Contains("Btn(\"초기화\"", forms, StringComparison.Ordinal);
+        Assert.Contains("(\"exp\", \"임박\")", forms, StringComparison.Ordinal);
         Assert.DoesNotContain("(\"유효기간\", nameof(StockRow.유효기간))", forms, StringComparison.Ordinal);
-        Assert.DoesNotContain("Chip(\"out\", \"품절\")", forms, StringComparison.Ordinal);
-        Assert.DoesNotContain("Chip(\"reorder\", \"발주\")", forms, StringComparison.Ordinal);
-        Assert.DoesNotContain("Chip(\"unset\", \"미설정\")", forms, StringComparison.Ordinal);
-        Assert.DoesNotContain("Chip(\"exp\", \"임박\")", forms, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -166,8 +190,9 @@ public class ShellLayoutTests
         Assert.True(issueStart >= 0 && stockStart > issueStart);
         var issue = forms[issueStart..stockStart];
         Assert.Contains("MouseDoubleClick", issue, StringComparison.Ordinal);
-        Assert.Contains("BeginEdit()", issue, StringComparison.Ordinal);
+        Assert.Contains("BeginEdit", issue, StringComparison.Ordinal);
         Assert.Contains("Field(\"LOT\", lot)", issue, StringComparison.Ordinal);
+        Assert.Contains("IssueCartLine", issue, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -206,6 +231,7 @@ public class ShellLayoutTests
         Assert.Contains("dimension.SelectionChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
         Assert.Contains("anchor.SelectedDateChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
         Assert.Contains("최근 6기간 추이로 보기", forms, StringComparison.Ordinal);
+        Assert.Contains("ColumnSeries<double>", forms, StringComparison.Ordinal);
         Assert.Contains("(\"기간\", \"기간\")", forms, StringComparison.Ordinal);
 
         var analytics = ReadRepoFile("Inventory.Infrastructure", "ReportAnalytics.cs");

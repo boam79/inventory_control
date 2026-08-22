@@ -1,5 +1,8 @@
 ﻿using Inventory.Core;
 using Inventory.Infrastructure;
+using Inventory.App.Views;
+using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -19,17 +22,67 @@ public partial class MainWindow : Window
         MinHeight = UiLayout.MinHeight;
         Width = UiLayout.DesignWidth;
         Height = UiLayout.DesignHeight;
+        ApplyFontScaleFromSettings();
         var session = AppSession.Current;
         UserLabel.Text = session is null
             ? "사용자 없음"
             : $"{session.UserName} ({session.Role})";
         PeriodLabel.Text = $"기준연월 {DateTime.Today:yyyy년 M월}";
-        VersionLabel.Text = $"버전 {ProductInfo.Version}";
+        StatusBarLeft.Text = $"버전 {ProductInfo.Version} · 오프라인 · 로컬 DB";
+        StatusBarRight.Text = "마지막 백업: 확인 중…";
         AlertLabel.Text = "";
         PageTitle.Text = ShellPages.Title(_selectedMenu);
         PageHint.Text = "로컬 · 오프라인";
         BuildNav();
+        PreviewKeyDown += MainWindow_PreviewKeyDown;
         Loaded += MainWindow_Loaded;
+    }
+
+    public static void ApplyFontScaleFromSettings()
+    {
+        using var db = AppHost.OpenDb();
+        var raw = new SettingsStore(db).Get(SettingsStore.FontScale, "normal");
+        var scale = raw switch
+        {
+            "large" => 1.15,
+            "xlarge" => 1.3,
+            _ => 1.0
+        };
+        if (Application.Current is not null)
+        {
+            Application.Current.Resources["AppFontScale"] = scale;
+        }
+
+        if (Application.Current?.MainWindow is MainWindow main)
+        {
+            main.RootPanel.LayoutTransform = new ScaleTransform(scale, scale);
+        }
+    }
+
+    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (e.Key == Key.D1 || e.Key == Key.NumPad1)
+            {
+                OpenMenu("receive");
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.D2 || e.Key == Key.NumPad2)
+            {
+                OpenMenu("issue");
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (e.Key == Key.F5)
+        {
+            OpenMenu(_selectedMenu, force: true);
+            e.Handled = true;
+        }
     }
 
     private void BuildNav()
@@ -37,21 +90,45 @@ public partial class MainWindow : Window
         var flags = AppSession.Current?.Permissions ?? RolePermissions.For(UserRole.Viewer);
         if (!ShellPages.CanSee(_selectedMenu, flags))
         {
-            _selectedMenu = "dashboard";
+            _selectedMenu = ShellPages.NavOrder.FirstOrDefault(t => ShellPages.CanSee(t, flags)) ?? "dashboard";
         }
 
         NavPanel.Children.Clear();
-        foreach (var tag in ShellPages.NavOrder.Where(t => ShellPages.CanSee(t, flags)))
+        foreach (var (groupLabel, _) in ShellPages.NavGroups)
         {
-            var capture = tag;
-            var button = new Button
+            var tags = ShellPages.OrderedTagsInGroup(groupLabel, flags).ToList();
+            if (tags.Count == 0)
             {
-                Content = ShellPages.NavLabel(capture),
-                Tag = capture,
-                Style = (Style)FindResource("NavButton")
-            };
-            button.Click += (_, _) => OpenMenu(capture);
-            NavPanel.Children.Add(button);
+                continue;
+            }
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+            row.Children.Add(new TextBlock
+            {
+                Text = groupLabel,
+                FontSize = 11,
+                Foreground = Application.Current?.TryFindResource("ClinicTextSecondaryBrush") as Brush
+                             ?? Brushes.Gray,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 4),
+                MinWidth = 28
+            });
+            var buttons = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
+            foreach (var tag in tags)
+            {
+                var capture = tag;
+                var button = new Button
+                {
+                    Content = ShellPages.NavLabel(capture),
+                    Tag = capture,
+                    Style = (Style)FindResource("NavButton")
+                };
+                button.Click += (_, _) => OpenMenu(capture);
+                buttons.Children.Add(button);
+            }
+
+            row.Children.Add(buttons);
+            NavPanel.Children.Add(row);
         }
 
         HighlightNav();
@@ -59,12 +136,15 @@ public partial class MainWindow : Window
 
     private void HighlightNav()
     {
-        foreach (var child in NavPanel.Children)
+        foreach (var groupRow in NavPanel.Children.OfType<StackPanel>())
         {
-            if (child is Button button)
+            foreach (var wrap in groupRow.Children.OfType<WrapPanel>())
             {
-                var active = button.Tag as string == _selectedMenu;
-                button.Style = (Style)FindResource(active ? "NavButtonActive" : "NavButton");
+                foreach (var child in wrap.Children.OfType<Button>())
+                {
+                    var active = child.Tag as string == _selectedMenu;
+                    child.Style = (Style)FindResource(active ? "NavButtonActive" : "NavButton");
+                }
             }
         }
     }
@@ -82,6 +162,7 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        UpdateLastBackupLabel();
         var integrity = IntegrityCheck.Run(AppHost.DatabasePath);
         if (integrity != "정상")
         {
@@ -90,15 +171,18 @@ public partial class MainWindow : Window
 
         using (var db = AppHost.OpenDb())
         {
-            var folder = new SettingsStore(db).Get(
+            var store = new SettingsStore(db);
+            var folder = store.Get(
                 SettingsStore.BackupFolder,
-                    global::System.IO.Path.Combine(
+                Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "SpringClinicInventory",
                     "backups"));
             BackupService.RunDailyBackupIfNeeded(AppHost.DatabasePath, folder, DateTime.Today);
+            store.Set(SettingsStore.LastBackupDate, DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         }
 
+        UpdateLastBackupLabel();
         TryAutoSeedIfEmpty();
         OpenMenu("dashboard");
 
@@ -120,6 +204,45 @@ public partial class MainWindow : Window
         {
             SetAlert(_seedNote, isWarning: false);
         }
+    }
+
+    private void UpdateLastBackupLabel()
+    {
+        try
+        {
+            using var db = AppHost.OpenDb();
+            var store = new SettingsStore(db);
+            var saved = store.Get(SettingsStore.LastBackupDate, "");
+            if (!string.IsNullOrWhiteSpace(saved))
+            {
+                StatusBarRight.Text = $"마지막 백업: {saved}";
+                return;
+            }
+
+            var folder = store.Get(
+                SettingsStore.BackupFolder,
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "SpringClinicInventory",
+                    "backups"));
+            if (Directory.Exists(folder))
+            {
+                var latest = Directory.GetFiles(folder, "*.db")
+                    .Select(f => new FileInfo(f))
+                    .OrderByDescending(f => f.LastWriteTimeUtc)
+                    .FirstOrDefault();
+                StatusBarRight.Text = latest is null
+                    ? "마지막 백업: 없음"
+                    : $"마지막 백업: {latest.LastWriteTime:yyyy-MM-dd}";
+                return;
+            }
+        }
+        catch
+        {
+            // ignore status bar errors
+        }
+
+        StatusBarRight.Text = "마지막 백업: —";
     }
 
     private void TryAutoSeedIfEmpty()
@@ -157,8 +280,10 @@ public partial class MainWindow : Window
     {
         AlertLabel.Text = string.IsNullOrWhiteSpace(message) ? "" : message;
         AlertLabel.Foreground = isWarning
-            ? new SolidColorBrush(Color.FromRgb(196, 123, 22))
-            : new SolidColorBrush(Color.FromRgb(31, 111, 115));
+            ? Application.Current?.TryFindResource("ClinicWarnBrush") as Brush
+              ?? new SolidColorBrush(Color.FromRgb(196, 123, 22))
+            : Application.Current?.TryFindResource("ClinicAccentBrush") as Brush
+              ?? new SolidColorBrush(Color.FromRgb(31, 111, 115));
     }
 
     public void ShowDashboard() => OpenMenu("dashboard", force: true);
@@ -197,13 +322,8 @@ public partial class MainWindow : Window
     {
         PageTitle.Text = ShellPages.Title(tag);
         PageHint.Text = string.IsNullOrWhiteSpace(ShellPages.Hint(tag)) ? "로컬 · 오프라인" : ShellPages.Hint(tag);
-        MainContent.Content = new TextBlock
-        {
-            Text = "불러오는 중...",
-            FontSize = 14,
-            Foreground = new SolidColorBrush(Color.FromRgb(107, 122, 134)),
-            Margin = new Thickness(4, 8, 0, 0)
-        };
+        var loading = UiComponents.LoadingHost(out var bar, out var label);
+        MainContent.Content = loading;
         var captured = tag;
         Dispatcher.BeginInvoke(() =>
         {

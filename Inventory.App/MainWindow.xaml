@@ -5,30 +5,55 @@
         Height="768" Width="1366"
         MinHeight="600" MinWidth="1100"
         WindowStartupLocation="CenterScreen"
-        Background="#F3F5F6">
-    <DockPanel>
+        Background="{StaticResource ClinicCanvasBrush}">
+    <DockPanel x:Name="RootPanel">
+        <Border DockPanel.Dock="Bottom" Padding="28,6" Background="White"
+                BorderBrush="{StaticResource ClinicLineBrush}" BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusBarLeft" FontSize="11"
+                           Foreground="{StaticResource ClinicTextSecondaryBrush}"/>
+                <TextBlock x:Name="StatusBarRight" Grid.Column="1" FontSize="11"
+                           Foreground="{StaticResource ClinicTextSecondaryBrush}"/>
+            </Grid>
+        </Border>
         <Border DockPanel.Dock="Top" Padding="28,18,28,12" Background="White"
-                BorderBrush="#E2E8EA" BorderThickness="0,0,0,1">
+                BorderBrush="{StaticResource ClinicLineBrush}" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Top">
-                    <TextBlock x:Name="PageTitle" FontSize="28" FontWeight="Bold"
-                               Foreground="#1A2330" Text="재고현황"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="스프링의원" FontSize="22" FontWeight="Bold"
+                                   Foreground="{StaticResource ClinicTextPrimaryBrush}"/>
+                        <TextBlock Text="재고관리" FontSize="14" FontWeight="Normal"
+                                   Foreground="{StaticResource ClinicTextSecondaryBrush}"
+                                   VerticalAlignment="Bottom" Margin="10,0,0,3"/>
+                    </StackPanel>
+                    <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"
+                               Foreground="{StaticResource ClinicAccentBrush}"
+                               Margin="0,6,0,0" Text="대시보드"/>
                     <TextBlock x:Name="PageHint" Margin="0,4,0,0" FontSize="13"
-                               Foreground="#6B7A86" Text="로컬 · 오프라인"/>
-                    <WrapPanel Margin="0,8,0,0">
-                        <TextBlock x:Name="UserLabel" FontSize="12" Foreground="#6B7A86" Margin="0,0,16,0"/>
-                        <TextBlock x:Name="PeriodLabel" FontSize="12" Foreground="#6B7A86" Margin="0,0,16,0"/>
-                        <TextBlock x:Name="VersionLabel" FontSize="12" Foreground="#6B7A86"/>
+                               Foreground="{StaticResource ClinicTextSecondaryBrush}" Text="로컬 · 오프라인"/>
+                    <WrapPanel Margin="0,6,0,0">
+                        <TextBlock x:Name="UserLabel" FontSize="12"
+                                   Foreground="{StaticResource ClinicTextSecondaryBrush}" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="PeriodLabel" FontSize="12"
+                                   Foreground="{StaticResource ClinicTextSecondaryBrush}" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="ShortcutHint" FontSize="11"
+                                   Foreground="{StaticResource ClinicTextSecondaryBrush}"
+                                   Text="Ctrl+1 입고 · Ctrl+2 출고 · F5 새로고침"/>
                     </WrapPanel>
                     <TextBlock x:Name="AlertLabel" Margin="0,6,0,0" FontSize="12"
-                               Foreground="#1F6F73" TextWrapping="Wrap"/>
+                               Foreground="{StaticResource ClinicAccentBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                    <WrapPanel x:Name="NavPanel" HorizontalAlignment="Right" MaxWidth="640"/>
+                    <StackPanel x:Name="NavPanel" HorizontalAlignment="Right"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
                         <Button x:Name="UpdateButton" Content="업데이트" Style="{StaticResource GhostButton}"
                                 Click="Update_Click"/>
@@ -37,7 +62,7 @@
             </Grid>
         </Border>
         <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                      VerticalScrollBarVisibility="Auto" Background="#F3F5F6">
+                      VerticalScrollBarVisibility="Auto" Background="{StaticResource ClinicCanvasBrush}">
             <ContentControl x:Name="MainContent" Margin="28,16,28,20"
                             HorizontalAlignment="Stretch" VerticalAlignment="Top"/>
         </ScrollViewer>

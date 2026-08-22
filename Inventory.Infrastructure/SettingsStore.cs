@@ -6,6 +6,8 @@ public sealed class SettingsStore
     public const string BackupFolder = "BackupFolder";
     public const string PeriodYear = "PeriodYear";
     public const string PeriodMonth = "PeriodMonth";
+    public const string FontScale = "FontScale";
+    public const string LastBackupDate = "LastBackupDate";
 
     private readonly InventoryDbContext _db;
 
