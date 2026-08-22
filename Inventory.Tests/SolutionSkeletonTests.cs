@@ -10,7 +10,7 @@ public class SolutionSkeletonTests
     {
         Assert.Equal("SpringClinic.Inventory", ProductInfo.Name);
         Assert.Equal("스프링의원 재고관리", ProductInfo.DisplayName);
-        Assert.Equal("1.0.25", ProductInfo.Version);
+        Assert.Equal("1.0.26", ProductInfo.Version);
         Assert.Equal("SQLite", DataStoreMarker.Engine);
     }
 

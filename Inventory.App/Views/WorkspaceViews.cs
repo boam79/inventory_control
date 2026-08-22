@@ -105,13 +105,17 @@ public abstract class WorkspaceView : UserControl
     }
 
     protected static DataGrid TableGrid(object items, params (string Header, string Binding)[] columns)
+        => TableGrid(items, allowMultiSelect: false, columns);
+
+    protected static DataGrid TableGrid(object items, bool allowMultiSelect, params (string Header, string Binding)[] columns)
     {
         var grid = new DataGrid
         {
             ItemsSource = items is System.Collections.IEnumerable enumerable ? enumerable : new[] { items },
             AutoGenerateColumns = columns.Length == 0,
             MaxHeight = UiLayout.ListMaxHeight,
-            SelectionMode = DataGridSelectionMode.Single
+            SelectionMode = allowMultiSelect ? DataGridSelectionMode.Extended : DataGridSelectionMode.Single,
+            SelectionUnit = DataGridSelectionUnit.FullRow
         };
         foreach (var column in columns)
         {

@@ -102,6 +102,29 @@ public class ShellLayoutTests
     }
 
     [Fact]
+    public void Receive_and_Issue_recent_lists_support_multi_select_delete()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var workspace = ReadRepoFile("Inventory.App", "Views", "WorkspaceViews.cs");
+        Assert.Contains("allowMultiSelect: true", forms, StringComparison.Ordinal);
+        Assert.Contains("DataGridSelectionMode.Extended", workspace, StringComparison.Ordinal);
+        Assert.Contains("DataGridSelectionUnit.FullRow", workspace, StringComparison.Ordinal);
+        Assert.Contains("수정은 한 건만 선택할 수 있습니다.", forms, StringComparison.Ordinal);
+        Assert.Contains("선택한 {toDelete.Count}건의 전표를 삭제할까요?", forms, StringComparison.Ordinal);
+
+        var receiveStart = forms.IndexOf("public sealed class ReceiveView", StringComparison.Ordinal);
+        var issueStart = forms.IndexOf("public sealed class IssueView", StringComparison.Ordinal);
+        var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
+        Assert.True(receiveStart >= 0 && issueStart > receiveStart && stockStart > issueStart);
+        var receive = forms[receiveStart..issueStart];
+        var issue = forms[issueStart..stockStart];
+        Assert.Contains("allowMultiSelect: true", receive, StringComparison.Ordinal);
+        Assert.Contains("allowMultiSelect: true", issue, StringComparison.Ordinal);
+        Assert.Contains("SelectedRecentRows()", receive, StringComparison.Ordinal);
+        Assert.Contains("SelectedRecentRows()", issue, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Stock_screen_is_a_filter_and_table()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");

@@ -61,13 +61,13 @@ public sealed class ReceiveView : WorkspaceView
                 IsCancelled = d.IsCancelled
             }).ToList();
             selectedDoc = null;
-            var next = TableGrid(recent, ("입고일", "입고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
+            var next = TableGrid(recent, allowMultiSelect: true, ("입고일", "입고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as ReceiptDocRow;
             next.MouseDoubleClick += (_, _) =>
             {
-                if (next.SelectedItem is ReceiptDocRow)
+                if (next.SelectedItem is ReceiptDocRow row)
                 {
-                    BeginEdit();
+                    BeginEdit(row);
                 }
             };
             if (recentGrid is null)
@@ -83,15 +83,32 @@ public sealed class ReceiveView : WorkspaceView
             parent.Children.Insert(index, next);
         }
 
-        void BeginEdit()
+        List<ReceiptDocRow> SelectedRecentRows()
+            => recentGrid?.SelectedItems.OfType<ReceiptDocRow>().ToList() ?? [];
+
+        void BeginEdit(ReceiptDocRow? fromDoubleClick = null)
         {
-            if (selectedDoc is null)
+            ReceiptDocRow? target = fromDoubleClick;
+            if (target is null)
             {
-                listStatus.Text = "목록에서 전표를 고르세요.";
-                return;
+                var selected = SelectedRecentRows();
+                if (selected.Count == 0)
+                {
+                    listStatus.Text = "목록에서 전표를 고르세요.";
+                    return;
+                }
+
+                if (selected.Count > 1)
+                {
+                    listStatus.Text = "수정은 한 건만 선택할 수 있습니다.";
+                    return;
+                }
+
+                target = selected[0];
             }
 
-            if (selectedDoc.IsCancelled)
+            selectedDoc = target;
+            if (target.IsCancelled)
             {
                 listStatus.Text = "이미 삭제(취소)된 전표입니다.";
                 return;
@@ -100,7 +117,7 @@ public sealed class ReceiveView : WorkspaceView
             try
             {
                 using var db = AppHost.OpenDb();
-                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(selectedDoc.전표);
+                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(target.전표);
                 if (detail.Type != DocumentType.Receipt)
                 {
                     listStatus.Text = "입고 전표만 수정할 수 있습니다.";
@@ -143,20 +160,25 @@ public sealed class ReceiveView : WorkspaceView
 
         void DeleteSelected()
         {
-            if (selectedDoc is null)
+            var selected = SelectedRecentRows();
+            if (selected.Count == 0)
             {
                 listStatus.Text = "목록에서 전표를 고르세요.";
                 return;
             }
 
-            if (selectedDoc.IsCancelled)
+            var toDelete = selected.Where(d => !d.IsCancelled).ToList();
+            if (toDelete.Count == 0)
             {
                 listStatus.Text = "이미 삭제된 전표입니다.";
                 return;
             }
 
+            var confirm = toDelete.Count == 1
+                ? $"전표 {toDelete[0].전표}를 삭제할까요? 재고는 원래대로 돌아갑니다."
+                : $"선택한 {toDelete.Count}건의 전표를 삭제할까요? 재고는 원래대로 돌아갑니다.";
             if (MessageBox.Show(
-                    $"전표 {selectedDoc.전표}를 삭제할까요? 재고는 원래대로 돌아갑니다.",
+                    confirm,
                     ProductInfo.DisplayName,
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -166,13 +188,19 @@ public sealed class ReceiveView : WorkspaceView
 
             try
             {
-                var id = selectedDoc.전표;
+                var ids = toDelete.Select(d => d.전표).ToList();
                 listStatus.Text = AppHost.Run((_, s) =>
                 {
-                    s.DeleteDocument(id);
-                    return "삭제 완료. 재고는 원래대로 돌아갑니다.";
+                    foreach (var id in ids)
+                    {
+                        s.DeleteDocument(id);
+                    }
+
+                    return ids.Count == 1
+                        ? "삭제 완료. 재고는 원래대로 돌아갑니다."
+                        : $"{ids.Count}건 삭제 완료. 재고는 원래대로 돌아갑니다.";
                 });
-                if (editingId == id)
+                if (editingId is { } editId && ids.Contains(editId))
                 {
                     editingId = null;
                 }
@@ -432,13 +460,13 @@ public sealed class IssueView : WorkspaceView
                 IsCancelled = d.IsCancelled
             }).ToList();
             selectedDoc = null;
-            var next = TableGrid(rows, ("출고일", "출고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
+            var next = TableGrid(rows, allowMultiSelect: true, ("출고일", "출고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as IssueDocRow;
             next.MouseDoubleClick += (_, _) =>
             {
-                if (next.SelectedItem is IssueDocRow)
+                if (next.SelectedItem is IssueDocRow row)
                 {
-                    BeginEdit();
+                    BeginEdit(row);
                 }
             };
             if (grid is null)
@@ -454,15 +482,32 @@ public sealed class IssueView : WorkspaceView
             parent.Children.Insert(index, next);
         }
 
-        void BeginEdit()
+        List<IssueDocRow> SelectedRecentRows()
+            => grid?.SelectedItems.OfType<IssueDocRow>().ToList() ?? [];
+
+        void BeginEdit(IssueDocRow? fromDoubleClick = null)
         {
-            if (selectedDoc is null)
+            IssueDocRow? target = fromDoubleClick;
+            if (target is null)
             {
-                listStatus.Text = "목록에서 전표를 고르세요.";
-                return;
+                var selected = SelectedRecentRows();
+                if (selected.Count == 0)
+                {
+                    listStatus.Text = "목록에서 전표를 고르세요.";
+                    return;
+                }
+
+                if (selected.Count > 1)
+                {
+                    listStatus.Text = "수정은 한 건만 선택할 수 있습니다.";
+                    return;
+                }
+
+                target = selected[0];
             }
 
-            if (selectedDoc.IsCancelled)
+            selectedDoc = target;
+            if (target.IsCancelled)
             {
                 listStatus.Text = "이미 삭제된 전표입니다.";
                 return;
@@ -471,7 +516,7 @@ public sealed class IssueView : WorkspaceView
             try
             {
                 using var db = AppHost.OpenDb();
-                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(selectedDoc.전표);
+                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(target.전표);
                 if (detail.Type != DocumentType.Issue)
                 {
                     listStatus.Text = "출고 전표만 수정할 수 있습니다.";
@@ -503,20 +548,25 @@ public sealed class IssueView : WorkspaceView
 
         void DeleteSelected()
         {
-            if (selectedDoc is null)
+            var selected = SelectedRecentRows();
+            if (selected.Count == 0)
             {
                 listStatus.Text = "목록에서 전표를 고르세요.";
                 return;
             }
 
-            if (selectedDoc.IsCancelled)
+            var toDelete = selected.Where(d => !d.IsCancelled).ToList();
+            if (toDelete.Count == 0)
             {
                 listStatus.Text = "이미 삭제된 전표입니다.";
                 return;
             }
 
+            var confirm = toDelete.Count == 1
+                ? $"전표 {toDelete[0].전표}를 삭제할까요? 재고는 원래대로 돌아갑니다."
+                : $"선택한 {toDelete.Count}건의 전표를 삭제할까요? 재고는 원래대로 돌아갑니다.";
             if (MessageBox.Show(
-                    $"전표 {selectedDoc.전표}를 삭제할까요? 재고는 원래대로 돌아갑니다.",
+                    confirm,
                     ProductInfo.DisplayName,
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -526,13 +576,19 @@ public sealed class IssueView : WorkspaceView
 
             try
             {
-                var id = selectedDoc.전표;
+                var ids = toDelete.Select(d => d.전표).ToList();
                 listStatus.Text = AppHost.Run((_, s) =>
                 {
-                    s.DeleteDocument(id);
-                    return "삭제 완료. 재고는 원래대로 돌아갑니다.";
+                    foreach (var id in ids)
+                    {
+                        s.DeleteDocument(id);
+                    }
+
+                    return ids.Count == 1
+                        ? "삭제 완료. 재고는 원래대로 돌아갑니다."
+                        : $"{ids.Count}건 삭제 완료. 재고는 원래대로 돌아갑니다.";
                 });
-                if (editingId == id)
+                if (editingId is { } editId && ids.Contains(editId))
                 {
                     editingId = null;
                 }
