@@ -193,14 +193,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Logout_Click(object sender, RoutedEventArgs e)
-    {
-        AppSession.Current = null;
-        var login = new LoginWindow();
-        login.Show();
-        Close();
-    }
-
     private void ShowPage(string tag)
     {
         PageTitle.Text = ShellPages.Title(tag);

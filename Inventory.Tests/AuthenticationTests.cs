@@ -15,40 +15,58 @@ public sealed class AuthenticationTests : IDisposable
     }
 
     [Fact]
-    public void Wrong_password_fails()
+    public void Empty_store_creates_default_local_administrator()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var auth = new AuthenticationService(db);
+
+        var (userName, role) = auth.EnsureLocalOperator();
+
+        Assert.Equal(AuthenticationService.DefaultLocalUserName, userName);
+        Assert.Equal(UserRole.Administrator, role);
+        Assert.True(auth.HasAnyUser());
+        Assert.Equal(1, db.Users.Count());
+    }
+
+    [Fact]
+    public void Existing_administrator_is_preferred_over_creating_local()
+    {
+        AddUser("clinic-admin", "admin-password", UserRole.Administrator);
+        AddUser("nurse", "nurse-pass", UserRole.DepartmentUser);
+
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var (userName, role) = new AuthenticationService(db).EnsureLocalOperator();
+
+        Assert.Equal("clinic-admin", userName);
+        Assert.Equal(UserRole.Administrator, role);
+        Assert.DoesNotContain(db.Users, u => u.UserName == AuthenticationService.DefaultLocalUserName);
+    }
+
+    [Fact]
+    public void Without_admin_ensures_local_administrator()
+    {
+        AddUser("nurse", "nurse-pass", UserRole.DepartmentUser);
+
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var (userName, role) = new AuthenticationService(db).EnsureLocalOperator();
+
+        Assert.Equal(AuthenticationService.DefaultLocalUserName, userName);
+        Assert.Equal(UserRole.Administrator, role);
+        Assert.True(db.Users.Any(u =>
+            u.UserName == AuthenticationService.DefaultLocalUserName
+            && u.Role == UserRole.Administrator
+            && u.IsActive));
+    }
+
+    [Fact]
+    public void CreateUser_rejects_duplicate_name()
     {
         AddUser("buyer", "good-password", UserRole.Purchasing);
 
         using var db = InventoryDatabase.CreateContext(_dbPath);
         var auth = new AuthenticationService(db);
-        var result = auth.SignIn("buyer", "bad-password");
-
-        Assert.False(result.Succeeded);
-        Assert.Null(result.Permissions);
-    }
-
-    [Fact]
-    public void Unknown_user_fails()
-    {
-        using var db = InventoryDatabase.CreateContext(_dbPath);
-        var result = new AuthenticationService(db).SignIn("nobody", "any");
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Fact]
-    public void Successful_login_returns_role_permissions_from_core()
-    {
-        AddUser("admin", "admin-password", UserRole.Administrator);
-
-        using var db = InventoryDatabase.CreateContext(_dbPath);
-        var result = new AuthenticationService(db).SignIn("admin", "admin-password");
-
-        Assert.True(result.Succeeded);
-        Assert.Equal("admin", result.UserName);
-        Assert.Equal(UserRole.Administrator, result.Role);
-        Assert.Equal(RolePermissions.For(UserRole.Administrator), result.Permissions);
-        Assert.True(result.Permissions!.CanManageUsers);
+        Assert.Throws<InvalidOperationException>(() =>
+            auth.CreateUser("buyer", "other-pass", UserRole.Viewer));
     }
 
     public void Dispose()

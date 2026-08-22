@@ -25,7 +25,21 @@ public partial class App : Application
                 _log?.Error(ex, AppLog.Sanitize(ex.Message));
             }
         };
+        BootstrapLocalSession();
         base.OnStartup(e);
+    }
+
+    private static void BootstrapLocalSession()
+    {
+        var dbPath = SqliteConnectionString.DefaultDatabasePath();
+        InventoryDatabase.Initialize(dbPath);
+        using var db = InventoryDatabase.CreateContext(dbPath);
+        var (userName, role) = new AuthenticationService(db).EnsureLocalOperator();
+        AppSession.Current = new AppSession(
+            userName,
+            role,
+            RolePermissions.For(role),
+            dbPath);
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

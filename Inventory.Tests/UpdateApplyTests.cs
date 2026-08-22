@@ -92,12 +92,12 @@ public class UpdateApplyTests
     public void Velopack_win_feed_json_captures_version_and_setup_url()
     {
         const string json = """
-            {"Assets":[{"PackageId":"SpringClinic.Inventory","Version":"1.0.26","Type":"Full","FileName":"SpringClinic.Inventory-1.0.26-full.nupkg","SHA256":"ABC"}]}
+            {"Assets":[{"PackageId":"SpringClinic.Inventory","Version":"1.0.27","Type":"Full","FileName":"SpringClinic.Inventory-1.0.27-full.nupkg","SHA256":"ABC"}]}
             """;
         var offer = UpdateChecker.ParseVelopackWinFeed(json);
         Assert.True(offer.Found);
-        Assert.Equal("v1.0.26", offer.VersionTag);
-        Assert.Equal(UpdateChecker.SetupDownloadUrl("v1.0.26"), offer.PackageUrl);
+        Assert.Equal("v1.0.27", offer.VersionTag);
+        Assert.Equal(UpdateChecker.SetupDownloadUrl("v1.0.27"), offer.PackageUrl);
         Assert.Equal(UpdateChecker.LatestSetupSha256Url, offer.Sha256Url);
         Assert.Contains(UpdateChecker.LatestDownloadBase, UpdateChecker.LatestFeedUrl);
     }

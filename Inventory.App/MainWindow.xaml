@@ -31,9 +31,7 @@
                     <WrapPanel x:Name="NavPanel" HorizontalAlignment="Right" MaxWidth="640"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
                         <Button x:Name="UpdateButton" Content="업데이트" Style="{StaticResource GhostButton}"
-                                Margin="0,0,8,0" Click="Update_Click"/>
-                        <Button x:Name="LogoutButton" Content="로그아웃" Style="{StaticResource GhostButton}"
-                                Click="Logout_Click"/>
+                                Click="Update_Click"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>

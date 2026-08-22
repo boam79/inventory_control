@@ -212,6 +212,26 @@ public class ShellLayoutTests
         Assert.Contains("public static DateTime StepBack(", analytics, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void App_starts_on_main_window_without_login_or_logout()
+    {
+        var appXaml = ReadRepoFile("Inventory.App", "App.xaml");
+        Assert.Contains("StartupUri=\"MainWindow.xaml\"", appXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoginWindow", appXaml, StringComparison.Ordinal);
+
+        var mainXaml = ReadRepoFile("Inventory.App", "MainWindow.xaml");
+        Assert.DoesNotContain("LogoutButton", mainXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("로그아웃", mainXaml, StringComparison.Ordinal);
+
+        var mainCs = ReadRepoFile("Inventory.App", "MainWindow.xaml.cs");
+        Assert.DoesNotContain("Logout_Click", mainCs, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoginWindow", mainCs, StringComparison.Ordinal);
+
+        var appCs = ReadRepoFile("Inventory.App", "App.xaml.cs");
+        Assert.Contains("BootstrapLocalSession", appCs, StringComparison.Ordinal);
+        Assert.Contains("EnsureLocalOperator", appCs, StringComparison.Ordinal);
+    }
+
     private static string ReadRepoFile(params string[] parts)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
