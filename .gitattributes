@@ -1,0 +1,9 @@
+* text=auto
+
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.cs text
+*.csproj text
+*.md text
+*.yml text eol=lf
+*.json text

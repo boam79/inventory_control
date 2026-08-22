@@ -32,10 +32,24 @@
 
 ### 개발 PC에서 빌드·테스트
 
-```powershell
+Windows와 macOS 모두:
+
+```text
 dotnet test
+```
+
+Windows (화면·설치본):
+
+```powershell
+powershell -File scripts/dev.ps1
 dotnet run --project Inventory.App
 powershell -ExecutionPolicy Bypass -File scripts/pack-installer.ps1
+```
+
+macOS (도메인·테스트만):
+
+```bash
+./scripts/dev.sh
 ```
 
 ### 데이터 위치
