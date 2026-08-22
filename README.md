@@ -13,7 +13,9 @@ Windows 설치형 의료소모품·시술재료 재고 프로그램입니다. �
 - **의원 PC / UI / 설치본:** Windows 10/11 64비트. 설치본은 .NET SDK 불필요 (self-contained)
 - **개발 (Windows·macOS 공통):** .NET 10 SDK. 로컬 도구 `vpk` 1.2.0은 Windows에서 Setup.exe를 만들 때만 필요
 
-같은 저장소를 양쪽에서 씁니다. `dotnet test` 와 아래 스크립트는 OS를 가리지 않습니다. WPF 화면과 Setup.exe만 Windows입니다.
+같은 저장소를 양쪽에서 씁니다. `dotnet test` 는 OS를 가리지 않습니다. WPF 화면과 Setup.exe만 Windows입니다.
+
+절차·제한·SDK 설치는 [DOC/08-맥-윈도우-개발환경.md](DOC/08-맥-윈도우-개발환경.md)를 따릅니다.
 
 | | Windows | macOS |
 |--|---------|-------|
@@ -21,21 +23,6 @@ Windows 설치형 의료소모품·시술재료 재고 프로그램입니다. �
 | 앱 화면 | `dotnet run --project Inventory.App` | 불가 (App은 스텁으로만 빌드) |
 | Setup.exe | `scripts/pack-installer.ps1` | 불가 |
 | CI | GitHub Actions `windows-latest` | GitHub Actions `macos-latest` |
-
-### macOS SDK (한 대당 최초 1회)
-
-sudo 없이 사용자 폴더에 설치합니다.
-
-```bash
-curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 10.0 --install-dir "$HOME/.dotnet"
-```
-
-`~/.zshrc`에 넣거나 `scripts/mac-env.sh`를 source 합니다.
-
-```bash
-export DOTNET_ROOT="$HOME/.dotnet"
-export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
-```
 
 Windows SDK: https://aka.ms/dotnet/download
 
