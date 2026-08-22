@@ -67,7 +67,8 @@ public sealed class ReceiveIssueView : WorkspaceView
 
         var pageBanner = CreatePageBanner();
         var docFilter = "all";
-        var date = Date();
+        var dateReceive = Date();
+        var dateIssue = Date();
         var supplier = Box();
         var dept = Box();
         var qty = Box("1");
@@ -119,8 +120,8 @@ public sealed class ReceiveIssueView : WorkspaceView
         var priceField = Field("단가", price);
         var deptField = Field("사용부서", dept);
         var lotField = Field("LOT", lot);
-        var dateFieldReceive = Field("입고일", date);
-        var dateFieldIssue = Field("출고일", date);
+        var dateFieldReceive = Field("입고일", dateReceive);
+        var dateFieldIssue = Field("출고일", dateIssue);
         var qtyField = Field("수량", qty);
 
         var cart = new List<CartLine>();
@@ -132,6 +133,8 @@ public sealed class ReceiveIssueView : WorkspaceView
         var recentFilterHost = new StackPanel();
         int? editingId = null;
         VoucherMode currentMode = mode;
+
+        DatePicker ActiveDatePicker() => currentMode == VoucherMode.Receive ? dateReceive : dateIssue;
         var newVoucherExpander = new Expander { IsExpanded = launch?.ExpandForm == true, Margin = new Thickness(0, 0, 0, 0) };
         Button? saveButton = null;
 
@@ -180,6 +183,14 @@ public sealed class ReceiveIssueView : WorkspaceView
             if (resetForm)
             {
                 ResetEditState();
+            }
+            else if (next == VoucherMode.Issue)
+            {
+                dateIssue.SelectedDate = dateReceive.SelectedDate;
+            }
+            else
+            {
+                dateReceive.SelectedDate = dateIssue.SelectedDate;
             }
 
             ApplyModeUi();
@@ -302,7 +313,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(target.전표);
                 SwitchMode(requiredMode, resetForm: false);
                 editingId = detail.Id;
-                date.SelectedDate = detail.DocumentDate;
+                ActiveDatePicker().SelectedDate = detail.DocumentDate;
                 supplier.Text = detail.SupplierName ?? "";
                 dept.Text = detail.DepartmentName ?? "";
                 cart.Clear();
@@ -498,7 +509,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                         }
 
                         var doc = svc.Receive(
-                            date.SelectedDate ?? DateTime.Today,
+                            dateReceive.SelectedDate ?? DateTime.Today,
                             supplierId,
                             null,
                             cart.Select(l => new ReceiptLineRequest
@@ -529,7 +540,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                     }
 
                     var issueDoc = svc.Issue(
-                        date.SelectedDate ?? DateTime.Today,
+                        dateIssue.SelectedDate ?? DateTime.Today,
                         deptId,
                         cart.Select(l => new IssueLineRequest
                         {
@@ -596,7 +607,8 @@ public sealed class ReceiveIssueView : WorkspaceView
         qty.TextChanged += (_, _) => ClearEditBannerOnChange();
         price.TextChanged += (_, _) => ClearEditBannerOnChange();
         lot.TextChanged += (_, _) => ClearEditBannerOnChange();
-        date.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
+        dateReceive.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
+        dateIssue.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
 
         var form = FormRow(itemFieldReceive, itemFieldIssue, dateFieldReceive, dateFieldIssue, supplierField, deptField, qtyField, priceField, lotField);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };

@@ -264,6 +264,22 @@ public class ShellLayoutTests
     }
 
     [Fact]
+    public void Receive_issue_uses_separate_date_pickers_for_receive_and_issue()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var viewStart = forms.IndexOf("public sealed class ReceiveIssueView", StringComparison.Ordinal);
+        var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
+        Assert.True(viewStart >= 0 && stockStart > viewStart);
+        var view = forms[viewStart..stockStart];
+        Assert.Contains("var dateReceive = Date();", view, StringComparison.Ordinal);
+        Assert.Contains("var dateIssue = Date();", view, StringComparison.Ordinal);
+        Assert.Contains("Field(\"입고일\", dateReceive)", view, StringComparison.Ordinal);
+        Assert.Contains("Field(\"출고일\", dateIssue)", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("Field(\"입고일\", date)", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("Field(\"출고일\", date)", view, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void App_starts_on_main_window_without_login_or_logout()
     {
         var appXaml = ReadRepoFile("Inventory.App", "App.xaml");
