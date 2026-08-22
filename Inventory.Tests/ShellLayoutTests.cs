@@ -94,6 +94,8 @@ public class ShellLayoutTests
 
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         Assert.Contains("CancelDocument", forms, StringComparison.Ordinal);
+        Assert.Contains("선택 전표 취소", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("취소 사유", forms, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -41,7 +41,6 @@ public sealed class ReceiveView : WorkspaceView
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
         var cart = new List<CartLine>();
         DataGrid? cartGrid = null;
-        var cancelReason = Box("입력 오류");
         var cancelStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
         List<ReceiptDocRow> recent = [];
         ReceiptDocRow? selectedDoc = null;
@@ -95,7 +94,7 @@ public sealed class ReceiveView : WorkspaceView
                 var id = selectedDoc.전표;
                 cancelStatus.Text = AppHost.Run((_, s) =>
                 {
-                    s.CancelDocument(id, cancelReason.Text);
+                    s.CancelDocument(id, "입력 오류");
                     return "취소(반대 처리) 완료. 재고는 원래대로 돌아갑니다.";
                 });
                 ReloadRecent();
@@ -251,7 +250,6 @@ public sealed class ReceiveView : WorkspaceView
         recentGrid ??= TableGrid(recent);
         recentBody.Children.Add(recentGrid);
         var cancelRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        cancelRow.Children.Add(Field("취소 사유", cancelReason));
         cancelRow.Children.Add(cancelDoc);
         recentBody.Children.Add(cancelRow);
         recentBody.Children.Add(cancelStatus);
@@ -291,7 +289,6 @@ public sealed class IssueView : WorkspaceView
         var qty = Box("1");
         var lot = Box();
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-        var cancelReason = Box("입력 오류");
         var cancelStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
         List<IssueDocRow> rows = [];
         IssueDocRow? selectedDoc = null;
@@ -391,7 +388,7 @@ public sealed class IssueView : WorkspaceView
                 var id = selectedDoc.전표;
                 cancelStatus.Text = AppHost.Run((_, s) =>
                 {
-                    s.CancelDocument(id, cancelReason.Text);
+                    s.CancelDocument(id, "입력 오류");
                     return "취소(반대 처리) 완료. 재고는 원래대로 돌아갑니다.";
                 });
                 ReloadRecent();
@@ -462,7 +459,6 @@ public sealed class IssueView : WorkspaceView
         var list = new StackPanel();
         list.Children.Add(grid);
         var cancelRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        cancelRow.Children.Add(Field("취소 사유", cancelReason));
         cancelRow.Children.Add(cancelDoc);
         list.Children.Add(cancelRow);
         list.Children.Add(cancelStatus);
