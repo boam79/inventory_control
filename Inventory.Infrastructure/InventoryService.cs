@@ -527,6 +527,54 @@ public sealed class InventoryService
             .ToList();
     }
 
+    public DocumentDetail GetDocumentDetail(int documentId)
+    {
+        var doc = _db.Documents.AsNoTracking()
+            .Include(d => d.Lines)
+            .SingleOrDefault(d => d.Id == documentId)
+            ?? throw new InvalidOperationException("전표를 찾을 수 없습니다.");
+
+        var itemIds = doc.Lines.Select(l => l.ItemId).Distinct().ToList();
+        var items = _db.Items.AsNoTracking()
+            .Where(i => itemIds.Contains(i.Id))
+            .ToDictionary(i => i.Id, i => i);
+        string? supplierName = null;
+        if (doc.SupplierId is { } sid)
+        {
+            supplierName = _db.Suppliers.AsNoTracking().Where(s => s.Id == sid).Select(s => s.Name).FirstOrDefault();
+        }
+
+        string? departmentName = null;
+        if (doc.DepartmentId is { } did)
+        {
+            departmentName = _db.Departments.AsNoTracking().Where(d => d.Id == did).Select(d => d.Name).FirstOrDefault();
+        }
+
+        var lines = doc.Lines.OrderBy(l => l.Id).Select(l =>
+        {
+            items.TryGetValue(l.ItemId, out var item);
+            var lot = string.IsNullOrWhiteSpace(l.LotNumber) || l.LotNumber == "NONE" ? null : l.LotNumber;
+            return new DocumentLineDetail(
+                item?.Code ?? "",
+                item?.Name ?? "—",
+                l.Quantity,
+                l.UnitPrice,
+                lot);
+        }).ToList();
+
+        return new DocumentDetail(
+            doc.Id,
+            doc.Type,
+            doc.DocumentDate,
+            doc.IsCancelled,
+            supplierName,
+            departmentName,
+            lines);
+    }
+
+    /// <summary>전표 삭제(재고 반대 처리). 원본은 취소 표시로 남긴다.</summary>
+    public StockDocument DeleteDocument(int documentId) => CancelDocument(documentId, "삭제");
+
     private static StockStatusKind Classify(Item item, decimal? onHand, bool expiring) =>
         Classify(item.IsActive, item.OpeningStatus, item.MinStock, onHand, expiring);
 

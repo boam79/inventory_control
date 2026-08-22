@@ -81,7 +81,7 @@ public class ShellLayoutTests
     }
 
     [Fact]
-    public void Reorder_and_ledger_menus_are_removed_but_cancel_stays_available()
+    public void Reorder_and_ledger_menus_are_removed_edit_delete_replace_cancel_button()
     {
         Assert.DoesNotContain("reorder", ShellPages.MenuTags);
         Assert.DoesNotContain("ledger", ShellPages.MenuTags);
@@ -93,9 +93,12 @@ public class ShellLayoutTests
         Assert.DoesNotContain("Views.ReorderView", mainWindow, StringComparison.Ordinal);
 
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
-        Assert.Contains("CancelDocument", forms, StringComparison.Ordinal);
-        Assert.Contains("선택 전표 취소", forms, StringComparison.Ordinal);
-        Assert.DoesNotContain("취소 사유", forms, StringComparison.Ordinal);
+        Assert.DoesNotContain("선택 전표 취소", forms, StringComparison.Ordinal);
+        Assert.Contains("Primary(\"수정\"", forms, StringComparison.Ordinal);
+        Assert.Contains("Danger(\"삭제\"", forms, StringComparison.Ordinal);
+        Assert.Contains("GetDocumentDetail", forms, StringComparison.Ordinal);
+        Assert.Contains("DeleteDocument", forms, StringComparison.Ordinal);
+        Assert.Contains("BeginEdit", forms, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,7 +135,7 @@ public class ShellLayoutTests
     }
 
     [Fact]
-    public void Issue_recent_list_double_click_fills_item_field()
+    public void Issue_recent_list_double_click_starts_edit()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         var issueStart = forms.IndexOf("public sealed class IssueView", StringComparison.Ordinal);
@@ -140,8 +143,7 @@ public class ShellLayoutTests
         Assert.True(issueStart >= 0 && stockStart > issueStart);
         var issue = forms[issueStart..stockStart];
         Assert.Contains("MouseDoubleClick", issue, StringComparison.Ordinal);
-        Assert.Contains("FirstItemName", issue, StringComparison.Ordinal);
-        Assert.Contains("itemQuery.Text = name", issue, StringComparison.Ordinal);
+        Assert.Contains("BeginEdit()", issue, StringComparison.Ordinal);
         Assert.Contains("Field(\"LOT\", lot)", issue, StringComparison.Ordinal);
     }
 

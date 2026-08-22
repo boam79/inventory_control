@@ -178,6 +178,22 @@ public sealed record DocumentSummary(
     int LineCount,
     string? FirstItemName = null);
 
+public sealed record DocumentLineDetail(
+    string ItemCode,
+    string ItemName,
+    decimal Quantity,
+    decimal UnitPrice,
+    string? LotNumber);
+
+public sealed record DocumentDetail(
+    int Id,
+    DocumentType Type,
+    DateTime DocumentDate,
+    bool IsCancelled,
+    string? SupplierName,
+    string? DepartmentName,
+    IReadOnlyList<DocumentLineDetail> Lines);
+
 public sealed class ImportPreview
 {
     public IReadOnlyList<string> ItemCodes { get; init; } = Array.Empty<string>();

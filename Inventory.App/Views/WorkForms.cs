@@ -41,10 +41,11 @@ public sealed class ReceiveView : WorkspaceView
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
         var cart = new List<CartLine>();
         DataGrid? cartGrid = null;
-        var cancelStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var listStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
         List<ReceiptDocRow> recent = [];
         ReceiptDocRow? selectedDoc = null;
         DataGrid? recentGrid = null;
+        int? editingId = null;
 
         void ReloadRecent()
         {
@@ -56,12 +57,19 @@ public sealed class ReceiveView : WorkspaceView
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
                 품목수 = d.LineCount,
-                상태 = d.IsCancelled ? "취소됨" : "저장",
+                상태 = d.IsCancelled ? "삭제됨" : "저장",
                 IsCancelled = d.IsCancelled
             }).ToList();
             selectedDoc = null;
             var next = TableGrid(recent, ("입고일", "입고일"), ("전표", "전표"), ("품목", "품목"), ("품목수", "품목수"), ("상태", "상태"));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as ReceiptDocRow;
+            next.MouseDoubleClick += (_, _) =>
+            {
+                if (next.SelectedItem is ReceiptDocRow)
+                {
+                    BeginEdit();
+                }
+            };
             if (recentGrid is null)
             {
                 recentGrid = next;
@@ -75,35 +83,107 @@ public sealed class ReceiveView : WorkspaceView
             parent.Children.Insert(index, next);
         }
 
-        var cancelDoc = Danger("선택 전표 취소", (_, _) =>
+        void BeginEdit()
         {
             if (selectedDoc is null)
             {
-                cancelStatus.Text = "목록에서 전표를 고르세요.";
+                listStatus.Text = "목록에서 전표를 고르세요.";
                 return;
             }
 
             if (selectedDoc.IsCancelled)
             {
-                cancelStatus.Text = "이미 취소된 전표입니다.";
+                listStatus.Text = "이미 삭제(취소)된 전표입니다.";
+                return;
+            }
+
+            try
+            {
+                using var db = AppHost.OpenDb();
+                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(selectedDoc.전표);
+                if (detail.Type != DocumentType.Receipt)
+                {
+                    listStatus.Text = "입고 전표만 수정할 수 있습니다.";
+                    return;
+                }
+
+                editingId = detail.Id;
+                date.SelectedDate = detail.DocumentDate;
+                supplier.Text = detail.SupplierName ?? "";
+                cart.Clear();
+                foreach (var line in detail.Lines)
+                {
+                    cart.Add(new CartLine
+                    {
+                        품목 = line.ItemName,
+                        코드 = line.ItemCode,
+                        수량 = line.Quantity,
+                        단가 = line.UnitPrice
+                    });
+                }
+
+                RenderCart();
+                if (detail.Lines.Count > 0)
+                {
+                    var first = detail.Lines[0];
+                    selectedCode = first.ItemCode;
+                    itemQuery.Text = first.ItemName;
+                    qty.Text = first.Quantity.ToString(CultureInfo.CurrentCulture);
+                    price.Text = first.UnitPrice.ToString(CultureInfo.CurrentCulture);
+                }
+
+                listStatus.Text = $"전표 {detail.Id} 수정 중 — 저장하면 기존 전표는 삭제되고 새로 저장됩니다.";
+                status.Text = listStatus.Text;
+            }
+            catch (Exception ex)
+            {
+                listStatus.Text = $"원인: {AppLog.Sanitize(ex.Message)}";
+            }
+        }
+
+        void DeleteSelected()
+        {
+            if (selectedDoc is null)
+            {
+                listStatus.Text = "목록에서 전표를 고르세요.";
+                return;
+            }
+
+            if (selectedDoc.IsCancelled)
+            {
+                listStatus.Text = "이미 삭제된 전표입니다.";
+                return;
+            }
+
+            if (MessageBox.Show(
+                    $"전표 {selectedDoc.전표}를 삭제할까요? 재고는 원래대로 돌아갑니다.",
+                    ProductInfo.DisplayName,
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
                 return;
             }
 
             try
             {
                 var id = selectedDoc.전표;
-                cancelStatus.Text = AppHost.Run((_, s) =>
+                listStatus.Text = AppHost.Run((_, s) =>
                 {
-                    s.CancelDocument(id, "입력 오류");
-                    return "취소(반대 처리) 완료. 재고는 원래대로 돌아갑니다.";
+                    s.DeleteDocument(id);
+                    return "삭제 완료. 재고는 원래대로 돌아갑니다.";
                 });
+                if (editingId == id)
+                {
+                    editingId = null;
+                }
+
                 ReloadRecent();
             }
             catch (Exception ex)
             {
-                cancelStatus.Text = $"원인: {AppLog.Sanitize(ex.Message)}";
+                listStatus.Text = $"원인: {AppLog.Sanitize(ex.Message)}";
             }
-        });
+        }
 
         void RenderCart()
         {
@@ -186,6 +266,11 @@ public sealed class ReceiveView : WorkspaceView
             {
                 status.Text = AppHost.Run((_, svc) =>
                 {
+                    if (editingId is { } editId)
+                    {
+                        svc.DeleteDocument(editId);
+                    }
+
                     int? supplierId = null;
                     if (!string.IsNullOrWhiteSpace(supplier.Text))
                     {
@@ -208,10 +293,15 @@ public sealed class ReceiveView : WorkspaceView
                         }).ToList());
                     cart.Clear();
                     RenderCart();
-                    return doc.DuplicateWarning
-                        ? "저장됨. 경고: 같은 공급업체·증빙번호 입고가 이미 있습니다."
-                        : $"저장됨. 전표 {doc.Id}";
+                    var wasEdit = editingId.HasValue;
+                    editingId = null;
+                    return wasEdit
+                        ? $"수정 저장됨. 전표 {doc.Id}"
+                        : doc.DuplicateWarning
+                            ? "저장됨. 경고: 같은 공급업체·증빙번호 입고가 이미 있습니다."
+                            : $"저장됨. 전표 {doc.Id}";
                 });
+                listStatus.Text = status.Text;
                 ReloadRecent();
             }
             catch (Exception ex)
@@ -249,10 +339,11 @@ public sealed class ReceiveView : WorkspaceView
         var recentBody = new StackPanel();
         recentGrid ??= TableGrid(recent);
         recentBody.Children.Add(recentGrid);
-        var cancelRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        cancelRow.Children.Add(cancelDoc);
-        recentBody.Children.Add(cancelRow);
-        recentBody.Children.Add(cancelStatus);
+        var editRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        editRow.Children.Add(Primary("수정", (_, _) => BeginEdit()));
+        editRow.Children.Add(Danger("삭제", (_, _) => DeleteSelected()));
+        recentBody.Children.Add(editRow);
+        recentBody.Children.Add(listStatus);
         Content = new StackPanel
         {
             Children =
@@ -289,10 +380,11 @@ public sealed class IssueView : WorkspaceView
         var qty = Box("1");
         var lot = Box();
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-        var cancelStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var listStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
         List<IssueDocRow> rows = [];
         IssueDocRow? selectedDoc = null;
         DataGrid? grid = null;
+        int? editingId = null;
 
         void PickFirstMatch()
         {
@@ -336,7 +428,7 @@ public sealed class IssueView : WorkspaceView
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
                 FirstItemName = d.FirstItemName,
                 품목수 = d.LineCount,
-                상태 = d.IsCancelled ? "취소됨" : "저장",
+                상태 = d.IsCancelled ? "삭제됨" : "저장",
                 IsCancelled = d.IsCancelled
             }).ToList();
             selectedDoc = null;
@@ -344,21 +436,14 @@ public sealed class IssueView : WorkspaceView
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as IssueDocRow;
             next.MouseDoubleClick += (_, _) =>
             {
-                if (next.SelectedItem is not IssueDocRow row)
+                if (next.SelectedItem is IssueDocRow)
                 {
-                    return;
+                    BeginEdit();
                 }
-
-                var name = row.FirstItemName ?? row.품목;
-                if (string.IsNullOrWhiteSpace(name) || name == "—")
-                {
-                    return;
-                }
-
-                itemQuery.Text = name;
             };
             if (grid is null)
             {
+                grid = next;
                 return;
             }
 
@@ -369,35 +454,96 @@ public sealed class IssueView : WorkspaceView
             parent.Children.Insert(index, next);
         }
 
-        var cancelDoc = Danger("선택 전표 취소", (_, _) =>
+        void BeginEdit()
         {
             if (selectedDoc is null)
             {
-                cancelStatus.Text = "목록에서 전표를 고르세요.";
+                listStatus.Text = "목록에서 전표를 고르세요.";
                 return;
             }
 
             if (selectedDoc.IsCancelled)
             {
-                cancelStatus.Text = "이미 취소된 전표입니다.";
+                listStatus.Text = "이미 삭제된 전표입니다.";
+                return;
+            }
+
+            try
+            {
+                using var db = AppHost.OpenDb();
+                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(selectedDoc.전표);
+                if (detail.Type != DocumentType.Issue)
+                {
+                    listStatus.Text = "출고 전표만 수정할 수 있습니다.";
+                    return;
+                }
+
+                editingId = detail.Id;
+                date.SelectedDate = detail.DocumentDate;
+                dept.Text = detail.DepartmentName ?? "";
+                if (detail.Lines.Count == 0)
+                {
+                    listStatus.Text = "전표에 품목이 없습니다.";
+                    return;
+                }
+
+                var first = detail.Lines[0];
+                selectedCode = first.ItemCode;
+                itemQuery.Text = first.ItemName;
+                qty.Text = first.Quantity.ToString(CultureInfo.CurrentCulture);
+                lot.Text = first.LotNumber ?? "";
+                listStatus.Text = $"전표 {detail.Id} 수정 중 — 등록하면 기존 전표는 삭제되고 새로 저장됩니다.";
+                status.Text = listStatus.Text;
+            }
+            catch (Exception ex)
+            {
+                listStatus.Text = $"원인: {AppLog.Sanitize(ex.Message)}";
+            }
+        }
+
+        void DeleteSelected()
+        {
+            if (selectedDoc is null)
+            {
+                listStatus.Text = "목록에서 전표를 고르세요.";
+                return;
+            }
+
+            if (selectedDoc.IsCancelled)
+            {
+                listStatus.Text = "이미 삭제된 전표입니다.";
+                return;
+            }
+
+            if (MessageBox.Show(
+                    $"전표 {selectedDoc.전표}를 삭제할까요? 재고는 원래대로 돌아갑니다.",
+                    ProductInfo.DisplayName,
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
                 return;
             }
 
             try
             {
                 var id = selectedDoc.전표;
-                cancelStatus.Text = AppHost.Run((_, s) =>
+                listStatus.Text = AppHost.Run((_, s) =>
                 {
-                    s.CancelDocument(id, "입력 오류");
-                    return "취소(반대 처리) 완료. 재고는 원래대로 돌아갑니다.";
+                    s.DeleteDocument(id);
+                    return "삭제 완료. 재고는 원래대로 돌아갑니다.";
                 });
+                if (editingId == id)
+                {
+                    editingId = null;
+                }
+
                 ReloadRecent();
             }
             catch (Exception ex)
             {
-                cancelStatus.Text = $"원인: {AppLog.Sanitize(ex.Message)}";
+                listStatus.Text = $"원인: {AppLog.Sanitize(ex.Message)}";
             }
-        });
+        }
 
         var save = Primary("등록", (_, _) =>
         {
@@ -418,6 +564,11 @@ public sealed class IssueView : WorkspaceView
             {
                 status.Text = AppHost.Run((_, svc) =>
                 {
+                    if (editingId is { } editId)
+                    {
+                        svc.DeleteDocument(editId);
+                    }
+
                     int? deptId = null;
                     if (!string.IsNullOrWhiteSpace(dept.Text))
                     {
@@ -435,8 +586,11 @@ public sealed class IssueView : WorkspaceView
                             LotNumber = string.IsNullOrWhiteSpace(lot.Text) ? null : lot.Text.Trim()
                         }
                     ]);
-                    return $"저장됨. 전표 {doc.Id}";
+                    var wasEdit = editingId.HasValue;
+                    editingId = null;
+                    return wasEdit ? $"수정 저장됨. 전표 {doc.Id}" : $"저장됨. 전표 {doc.Id}";
                 });
+                listStatus.Text = status.Text;
                 ReloadRecent();
             }
             catch (Exception ex)
@@ -458,10 +612,11 @@ public sealed class IssueView : WorkspaceView
         grid = TableGrid(rows);
         var list = new StackPanel();
         list.Children.Add(grid);
-        var cancelRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        cancelRow.Children.Add(cancelDoc);
-        list.Children.Add(cancelRow);
-        list.Children.Add(cancelStatus);
+        var editRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        editRow.Children.Add(Primary("수정", (_, _) => BeginEdit()));
+        editRow.Children.Add(Danger("삭제", (_, _) => DeleteSelected()));
+        list.Children.Add(editRow);
+        list.Children.Add(listStatus);
         Content = new StackPanel
         {
             Children =

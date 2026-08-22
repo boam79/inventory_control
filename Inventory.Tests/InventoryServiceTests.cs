@@ -181,6 +181,32 @@ public sealed class InventoryServiceTests : IDisposable
     }
 
     [Fact]
+    public void GetDocumentDetail_and_DeleteDocument_support_edit_delete_flow()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 10, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(30));
+        svc.ConfirmOpening("M001");
+        var supplier = svc.CreateSupplier("A사");
+        var receipt = svc.Receive(DateTime.Today, supplier.Id, null,
+        [
+            new ReceiptLineRequest { ItemCode = "M001", Quantity = 2, UnitPrice = 100, LotNumber = "L1", ExpiryDate = DateTime.Today.AddDays(20) }
+        ]);
+
+        var detail = svc.GetDocumentDetail(receipt.Id);
+        Assert.Equal(DocumentType.Receipt, detail.Type);
+        Assert.Equal("A사", detail.SupplierName);
+        Assert.Single(detail.Lines);
+        Assert.Equal("M001", detail.Lines[0].ItemCode);
+        Assert.Equal(2m, detail.Lines[0].Quantity);
+
+        svc.DeleteDocument(receipt.Id);
+        Assert.True(db.Documents.Single(d => d.Id == receipt.Id).IsCancelled);
+        Assert.Equal(10m, svc.GetOnHand("M001"));
+    }
+
+    [Fact]
     public void On_hand_equals_lot_sum()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);
