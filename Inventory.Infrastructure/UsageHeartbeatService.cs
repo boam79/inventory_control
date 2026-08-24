@@ -10,44 +10,45 @@ public interface IUsageMailSender
     void Send(UsageNotifyOptions options, string subject, string body);
 }
 
-/// <summary>한메일(다음) SMTP — 기본 smtp.daum.net:465 SSL(암시적). 587은 STARTTLS.</summary>
+/// <summary>한메일(다음) SMTP — 기본 smtp.daum.net:465 + 암시적 SSL(SslOnConnect).</summary>
 public sealed class SmtpUsageMailSender : IUsageMailSender
 {
     public void Send(UsageNotifyOptions options, string subject, string body)
     {
         var password = options.ResolvePassword()
                        ?? throw new InvalidOperationException("SMTP 비밀번호가 없습니다.");
-        var from = string.IsNullOrWhiteSpace(options.FromAddress)
-            ? UsageNotifyDefaults.DefaultFromAddress
-            : options.FromAddress.Trim();
+
+        var fromAddress = options.FromAddress.Trim();
         var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(from));
+        message.From.Add(MailboxAddress.Parse(fromAddress));
         message.To.Add(MailboxAddress.Parse(options.ToAddress.Trim()));
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
 
-        var secure = options.SmtpPort == 465
-            ? SecureSocketOptions.SslOnConnect
-            : SecureSocketOptions.StartTls;
-
         using var client = new SmtpClient { Timeout = 15_000 };
-        client.Connect(options.SmtpHost.Trim(), options.SmtpPort, secure);
-        try
+        client.Connect(
+            options.SmtpHost.Trim(),
+            options.SmtpPort,
+            ResolveSecureSocketOptions(options.SmtpPort));
+        client.Authenticate(ResolveSmtpUsername(fromAddress), password);
+        client.Send(message);
+        client.Disconnect(quit: true);
+    }
+
+    /// <summary>465=암시적 SSL(SslOnConnect), 587=STARTTLS, 그 외는 자동.</summary>
+    public static SecureSocketOptions ResolveSecureSocketOptions(int port) =>
+        port switch
         {
-            // 한메일: 전체 주소 또는 로그인 ID(pjm7908) 모두 가능. 기본 From이면 ID로 인증.
-            var authUser = string.Equals(from, UsageNotifyDefaults.DefaultFromAddress, StringComparison.OrdinalIgnoreCase)
-                ? UsageNotifyDefaults.DefaultSmtpUser
-                : from;
-            client.Authenticate(authUser, password);
-            client.Send(message);
-        }
-        finally
-        {
-            if (client.IsConnected)
-            {
-                client.Disconnect(true);
-            }
-        }
+            465 => SecureSocketOptions.SslOnConnect,
+            587 => SecureSocketOptions.StartTls,
+            _ => SecureSocketOptions.Auto
+        };
+
+    /// <summary>다음 SMTP 인증 ID — 아이디만(pjm7908) 또는 전체 주소 모두 허용.</summary>
+    public static string ResolveSmtpUsername(string fromAddress)
+    {
+        var at = fromAddress.IndexOf('@');
+        return at > 0 ? fromAddress[..at] : fromAddress;
     }
 }
 
@@ -55,6 +56,7 @@ public enum UsageHeartbeatOutcome
 {
     Sent,
     SkippedDisabled,
+    SkippedAlreadySentToday,
     SkippedSmtpNotConfigured,
     Failed
 }
@@ -62,11 +64,14 @@ public enum UsageHeartbeatOutcome
 public sealed record UsageHeartbeatResult(UsageHeartbeatOutcome Outcome, string Message);
 
 /// <summary>
-/// 설치/사용 하트비트 메일. 앱 시작마다, 실패해도 업무를 막지 않습니다. 재고 데이터는 보내지 않습니다.
+/// 설치/사용 하트비트 메일. 하루 1회, 실패해도 업무를 막지 않습니다. 재고 데이터는 보내지 않습니다.
 /// </summary>
 public static class UsageHeartbeatService
 {
     private static int _smtpMissingLogged;
+
+    public static bool ShouldSendToday(DateOnly? lastSentLocalDate, DateOnly todayLocal) =>
+        lastSentLocalDate is null || lastSentLocalDate.Value != todayLocal;
 
     public static UsageHeartbeatResult TrySendToday(
         string appDataRoot,
@@ -84,12 +89,15 @@ public static class UsageHeartbeatService
                 return new UsageHeartbeatResult(UsageHeartbeatOutcome.SkippedDisabled, "사용 알림이 꺼져 있습니다.");
             }
 
+            var today = todayLocal ?? DateOnly.FromDateTime(DateTime.Now);
+            _ = today;
+
             if (!options.IsSmtpConfigured())
             {
                 if (Interlocked.Exchange(ref _smtpMissingLogged, 1) == 0)
                 {
                     log?.Information(
-                        "사용 알림 SMTP 미설정 — 발송 생략. From이 비어 있거나 내장 비밀번호를 쓸 수 없습니다.");
+                        "사용 알림 SMTP 미설정 — 발송 생략. usage-notify.json에 From/앱 비밀번호를 넣거나 내장 기본값을 확인하세요.");
                 }
 
                 return new UsageHeartbeatResult(

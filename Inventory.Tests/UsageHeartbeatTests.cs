@@ -1,5 +1,6 @@
 using Inventory.Core;
 using Inventory.Infrastructure;
+using MailKit.Security;
 using System.Globalization;
 
 namespace Inventory.Tests;
@@ -161,6 +162,22 @@ public sealed class UsageHeartbeatTests
                 "Inventory.Infrastructure", "UsageNotifyDefaults.cs")));
         Assert.DoesNotContain(UsageNotifyDefaults.GetBuiltInPassword(), source, StringComparison.Ordinal);
         Assert.Contains("ObfuscatedPassword", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Smtp_daum_port_465_uses_implicit_ssl()
+    {
+        Assert.Equal(SecureSocketOptions.SslOnConnect, SmtpUsageMailSender.ResolveSecureSocketOptions(465));
+        Assert.Equal(SecureSocketOptions.StartTls, SmtpUsageMailSender.ResolveSecureSocketOptions(587));
+        Assert.Equal(UsageNotifyOptions.DefaultSmtpPort, 465);
+    }
+
+    [Fact]
+    public void Smtp_daum_auth_id_strips_domain_or_uses_plain_id()
+    {
+        Assert.Equal(UsageNotifyDefaults.DefaultSmtpUser, SmtpUsageMailSender.ResolveSmtpUsername("pjm7908@hanmail.net"));
+        Assert.Equal(UsageNotifyDefaults.DefaultSmtpUser, SmtpUsageMailSender.ResolveSmtpUsername("pjm7908@daum.net"));
+        Assert.Equal(UsageNotifyDefaults.DefaultSmtpUser, SmtpUsageMailSender.ResolveSmtpUsername("pjm7908"));
     }
 
     [Fact]
