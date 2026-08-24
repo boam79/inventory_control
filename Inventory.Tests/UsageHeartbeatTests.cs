@@ -92,6 +92,28 @@ public sealed class UsageHeartbeatTests
     }
 
     [Fact]
+    public void Settings_view_hides_usage_notify_ui_but_defaults_still_send()
+    {
+        var settingsSource = File.ReadAllText(
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..",
+                "Inventory.App", "Views", "WorkspaceViews.cs")));
+        var settingsStart = settingsSource.IndexOf("public sealed class SettingsView", StringComparison.Ordinal);
+        Assert.True(settingsStart >= 0);
+        var settingsClass = settingsSource[settingsStart..];
+        Assert.DoesNotContain("Section(\"사용 알림\"", settingsClass, StringComparison.Ordinal);
+        Assert.DoesNotContain("사용 알림 보내기", settingsClass, StringComparison.Ordinal);
+        Assert.DoesNotContain("사용 알림 설정 저장", settingsClass, StringComparison.Ordinal);
+        Assert.DoesNotContain("SMTP 발신(From)", settingsClass, StringComparison.Ordinal);
+        Assert.DoesNotContain("설치 ID (읽기 전용)", settingsClass, StringComparison.Ordinal);
+
+        var mainCs = File.ReadAllText(
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..",
+                "Inventory.App", "MainWindow.xaml.cs")));
+        Assert.Contains("TrySendUsageHeartbeat", mainCs, StringComparison.Ordinal);
+        Assert.Contains("UsageHeartbeatService.TrySendTodayInBackground", mainCs, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LoadOrDefault_empty_config_uses_built_in_smtp_for_send_path()
     {
         var root = NewTempRoot();
@@ -120,6 +142,7 @@ public sealed class UsageHeartbeatTests
             Assert.Single(sender.Calls);
             Assert.Equal(UsageNotifyDefaults.GetBuiltInPassword(), sender.Calls[0].ResolvedPassword);
             Assert.Equal(UsageNotifyDefaults.DefaultFromAddress, sender.Calls[0].FromAddress);
+            Assert.Equal(UsageNotifyOptions.DefaultToAddress, loaded.ToAddress);
         }
         finally
         {

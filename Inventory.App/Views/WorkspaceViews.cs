@@ -1210,87 +1210,11 @@ public sealed class SettingsView : WorkspaceView
         panel.Children.Add(updateBtn);
         panel.Children.Add(progressBar);
 
-        var appDataRoot = UsageNotifyConfigStore.DefaultAppDataRoot();
-        var notifyOpts = UsageNotifyConfigStore.LoadOrDefault(appDataRoot);
-        var installId = InstallIdentity.GetOrCreate(appDataRoot);
-        var notifyBody = new StackPanel();
-        notifyBody.Children.Add(Note(
-            "앱 시작 시 하루 1회, 개발자 메일로 설치·사용 알림만 보냅니다. 재고·거래 데이터는 포함하지 않습니다. " +
-            "SMTP From·앱 비밀번호는 프로그램에 기본 내장되어 있어 의원 PC에서 따로 입력하지 않아도 됩니다. " +
-            "아래에서 덮어쓸 수 있고, 비밀번호를 비워 두면 내장 기본값을 씁니다."));
-        var notifyEnabled = new CheckBox
-        {
-            Content = "사용 알림 보내기",
-            IsChecked = notifyOpts.Enabled,
-            Margin = new Thickness(0, 0, 0, 8)
-        };
-        notifyBody.Children.Add(notifyEnabled);
-        var installIdBox = Box(installId.ToString("D"));
-        installIdBox.IsReadOnly = true;
-        installIdBox.Width = 320;
-        installIdBox.MaxWidth = 480;
-        notifyBody.Children.Add(Field("설치 ID (읽기 전용)", installIdBox));
-        var smtpFrom = Box(string.IsNullOrWhiteSpace(notifyOpts.FromAddress)
-            ? UsageNotifyDefaults.DefaultFromAddress
-            : notifyOpts.FromAddress);
-        smtpFrom.Width = 280;
-        smtpFrom.MaxWidth = 400;
-        notifyBody.Children.Add(Field("SMTP 발신(From)", smtpFrom));
-        var smtpHost = Box(string.IsNullOrWhiteSpace(notifyOpts.SmtpHost)
-            ? UsageNotifyOptions.DefaultSmtpHost
-            : notifyOpts.SmtpHost);
-        smtpHost.Width = 220;
-        var smtpPort = Box(notifyOpts.SmtpPort > 0
-            ? notifyOpts.SmtpPort.ToString()
-            : UsageNotifyOptions.DefaultSmtpPort.ToString());
-        smtpPort.Width = 80;
-        notifyBody.Children.Add(Field("SMTP 호스트", smtpHost));
-        notifyBody.Children.Add(Field("SMTP 포트", smtpPort));
-        var smtpPassword = new PasswordBox { Width = 220, MinWidth = 160 };
-        var hasCustomPassword = !string.IsNullOrWhiteSpace(notifyOpts.PasswordProtected)
-            || !string.IsNullOrWhiteSpace(notifyOpts.Password);
-        notifyBody.Children.Add(Field(
-            hasCustomPassword
-                ? "SMTP 앱 비밀번호 (변경 시에만 입력 · 비우면 저장된 값 유지)"
-                : "SMTP 앱 비밀번호 (비우면 내장 기본값 사용)",
-            smtpPassword));
-        notifyBody.Children.Add(Note(
-            $"수신: {UsageNotifyOptions.DefaultToAddress} · 내장 기본 From: {UsageNotifyDefaults.DefaultFromAddress} · 설정 파일: {UsageNotifyConfigStore.ConfigPath(appDataRoot)}"));
-        notifyBody.Children.Add(Primary("사용 알림 설정 저장", (_, _) =>
-        {
-            if (!int.TryParse(smtpPort.Text.Trim(), out var port) || port <= 0)
-            {
-                port = UsageNotifyOptions.DefaultSmtpPort;
-            }
-
-            var fromText = smtpFrom.Text.Trim();
-            var next = new UsageNotifyOptions
-            {
-                Enabled = notifyEnabled.IsChecked == true,
-                ToAddress = UsageNotifyOptions.DefaultToAddress,
-                SmtpHost = string.IsNullOrWhiteSpace(smtpHost.Text)
-                    ? UsageNotifyOptions.DefaultSmtpHost
-                    : smtpHost.Text.Trim(),
-                SmtpPort = port,
-                FromAddress = string.IsNullOrWhiteSpace(fromText)
-                    ? UsageNotifyDefaults.DefaultFromAddress
-                    : fromText,
-                PasswordProtected = notifyOpts.PasswordProtected,
-                Password = notifyOpts.Password
-            };
-            var newPassword = smtpPassword.Password;
-            UsageNotifyConfigStore.Save(
-                appDataRoot,
-                next,
-                string.IsNullOrEmpty(newPassword) ? null : newPassword);
-            notifyOpts = UsageNotifyConfigStore.LoadOrDefault(appDataRoot);
-            smtpPassword.Clear();
-            SetBanner(pageBanner, "사용 알림 설정을 저장했습니다.");
-        }));
+        // 사용 알림(하트비트)은 설정 UI에 노출하지 않음.
+        // MainWindow 시작 시 UsageHeartbeatService + UsageNotifyDefaults로 자동 발송.
 
         Content = PageRoot(pageBanner,
             Section("환경설정", panel),
-            Section("사용 알림", notifyBody),
             Section("데이터 초기화", resetBody));
     }
 }
