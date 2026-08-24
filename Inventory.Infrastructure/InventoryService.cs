@@ -552,9 +552,27 @@ public sealed class InventoryService
         return (take is null ? query : query.Take(take.Value)).ToList();
     }
 
-    public IReadOnlyList<DocumentSummary> ListDocumentSummaries(int take)
+    /// <param name="type">
+    /// When set, only that document type is returned (e.g. Issue for the 출고 chip).
+    /// When null and <paramref name="voucherTypesOnly"/> is true, Receipt + Issue only
+    /// (excludes Reversal / Adjustment / Opening which used to appear as fake 「출고」).
+    /// </param>
+    public IReadOnlyList<DocumentSummary> ListDocumentSummaries(
+        int take,
+        DocumentType? type = null,
+        bool voucherTypesOnly = false)
     {
-        var summaries = _db.Documents.AsNoTracking()
+        var query = _db.Documents.AsNoTracking().AsQueryable();
+        if (type is { } typed)
+        {
+            query = query.Where(d => d.Type == typed);
+        }
+        else if (voucherTypesOnly)
+        {
+            query = query.Where(d => d.Type == DocumentType.Receipt || d.Type == DocumentType.Issue);
+        }
+
+        var summaries = query
             .OrderByDescending(d => d.Id)
             .Take(take)
             .Select(d => new

@@ -415,6 +415,35 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Null(summary.UnitPrice);
     }
 
+    [Fact]
+    public void ListDocumentSummaries_filters_by_type_and_can_exclude_non_voucher_types()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 20, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(90));
+        svc.ConfirmOpening("M001");
+        var receipt = svc.Receive(DateTime.Today, null, "R1",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 5, UnitPrice = 100, LotNumber = "A", ExpiryDate = DateTime.Today.AddDays(30) }]);
+        var issue = svc.Issue(DateTime.Today, null, [new IssueLineRequest { ItemCode = "M001", Quantity = 2, LotNumber = "OPEN" }]);
+        svc.CancelDocument(receipt.Id, "테스트 취소");
+
+        Assert.Contains(svc.ListDocumentSummaries(20), d => d.Type == DocumentType.Reversal);
+        var vouchers = svc.ListDocumentSummaries(20, voucherTypesOnly: true);
+        Assert.DoesNotContain(vouchers, d => d.Type == DocumentType.Reversal);
+        Assert.Contains(vouchers, d => d.Id == receipt.Id);
+        Assert.Contains(vouchers, d => d.Id == issue.Id);
+
+        var issuesOnly = svc.ListDocumentSummaries(20, DocumentType.Issue);
+        Assert.All(issuesOnly, d => Assert.Equal(DocumentType.Issue, d.Type));
+        Assert.Contains(issuesOnly, d => d.Id == issue.Id);
+        Assert.DoesNotContain(issuesOnly, d => d.Id == receipt.Id);
+
+        var receiptsOnly = svc.ListDocumentSummaries(20, DocumentType.Receipt);
+        Assert.All(receiptsOnly, d => Assert.Equal(DocumentType.Receipt, d.Type));
+        Assert.Contains(receiptsOnly, d => d.Id == receipt.Id);
+    }
+
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

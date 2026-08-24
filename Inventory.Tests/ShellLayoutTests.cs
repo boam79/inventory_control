@@ -195,6 +195,9 @@ public class ShellLayoutTests
         Assert.Contains("SelectedRecentRows()", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("ColumnSpec(\"유형\", \"유형\"", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("(\"all\", \"전체\"), (\"receive\", \"입고\"), (\"issue\", \"출고\")", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("ListDocumentSummaries(80, typeFilter, voucherTypesOnly: true)", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("saveButton.Content = isReceive ? \"입고 저장\" : \"출고 저장\"", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("Primary(currentMode == VoucherMode.Receive ? \"입고 저장\" : \"출고 저장\"", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("RadioButton", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("Expander", receiveIssue, StringComparison.Ordinal);
     }
@@ -242,6 +245,7 @@ public class ShellLayoutTests
     public void Recent_documents_show_item_name_and_expired_lots_are_flagged()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        Assert.Contains("유형 = DocTypeKo(d.Type)", forms, StringComparison.Ordinal);
         Assert.Contains("품목 = d.LineCount > 1 ? $\"{d.FirstItemName} 등 {d.LineCount}건\" : d.FirstItemName ?? \"—\"", forms, StringComparison.Ordinal);
         Assert.Contains("(\"품목\", \"품목\")", forms, StringComparison.Ordinal);
         Assert.Contains("IsExpired = days is not null && days < 0", forms, StringComparison.Ordinal);

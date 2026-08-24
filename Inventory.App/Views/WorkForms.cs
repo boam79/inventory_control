@@ -144,6 +144,9 @@ public sealed class ReceiveIssueView : WorkspaceView
         DatePicker ActiveDatePicker() => currentMode == VoucherMode.Receive ? dateReceive : dateIssue;
         var newVoucherExpander = new Expander { IsExpanded = launch?.ExpandForm == true, Margin = new Thickness(0, 0, 0, 0) };
         Button? saveButton = null;
+        RadioButton? receiveRadio = null;
+        RadioButton? issueRadio = null;
+        var suppressModeRadio = false;
 
         void FillIssueCost(string? code)
         {
@@ -214,40 +217,76 @@ public sealed class ReceiveIssueView : WorkspaceView
                 saveButton.Content = isReceive ? "입고 저장" : "출고 저장";
             }
 
+            suppressModeRadio = true;
+            try
+            {
+                if (receiveRadio is not null)
+                {
+                    receiveRadio.IsChecked = isReceive;
+                }
+
+                if (issueRadio is not null)
+                {
+                    issueRadio.IsChecked = !isReceive;
+                }
+            }
+            finally
+            {
+                suppressModeRadio = false;
+            }
+
             UpdateLineTotal();
         }
 
-        void SwitchMode(VoucherMode next, bool resetForm = true)
+        void SwitchMode(VoucherMode next, bool resetForm = true, bool syncRecentFilter = true)
         {
-            if (currentMode == next)
+            var changed = currentMode != next;
+            if (changed)
             {
-                return;
-            }
-
-            currentMode = next;
-            if (resetForm)
-            {
-                ResetEditState();
-            }
-            else if (next == VoucherMode.Issue)
-            {
-                dateIssue.SelectedDate = dateReceive.SelectedDate;
-            }
-            else
-            {
-                dateReceive.SelectedDate = dateIssue.SelectedDate;
+                currentMode = next;
+                if (resetForm)
+                {
+                    ResetEditState();
+                }
+                else if (next == VoucherMode.Issue)
+                {
+                    dateIssue.SelectedDate = dateReceive.SelectedDate;
+                }
+                else
+                {
+                    dateReceive.SelectedDate = dateIssue.SelectedDate;
+                }
             }
 
             ApplyModeUi();
+            if (syncRecentFilter)
+            {
+                var nextFilter = next == VoucherMode.Receive ? "receive" : "issue";
+                if (docFilter != nextFilter)
+                {
+                    docFilter = nextFilter;
+                    ReloadRecent();
+                }
+                else if (changed)
+                {
+                    RenderRecentGrid();
+                }
+            }
         }
 
         void ReloadRecent()
         {
             using var db = AppHost.OpenDb();
             var svc = new InventoryService(db, AppHost.Actor);
-            recent = svc.ListDocumentSummaries(80).Select(d => new RecentDocRow
+            DocumentType? typeFilter = docFilter switch
             {
-                유형 = d.Type == DocumentType.Receipt ? "입고" : "출고",
+                "receive" => DocumentType.Receipt,
+                "issue" => DocumentType.Issue,
+                _ => null
+            };
+            recent = svc.ListDocumentSummaries(80, typeFilter, voucherTypesOnly: true).Select(d => new RecentDocRow
+            {
+                유형 = DocTypeKo(d.Type),
                 일자 = d.DocumentDate.ToString("yyyy-MM-dd"),
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
@@ -268,10 +307,29 @@ public sealed class ReceiveIssueView : WorkspaceView
             recentFilterHost.Children.Clear();
             recentFilterHost.Children.Add(BuildFilterChips(docFilter, id =>
             {
+                if (docFilter == id)
+                {
+                    return;
+                }
+
                 docFilter = id;
-                RenderRecentGrid();
+                if (id == "receive" && canReceive)
+                {
+                    SwitchMode(VoucherMode.Receive, resetForm: false, syncRecentFilter: false);
+                }
+                else if (id == "issue" && canIssue)
+                {
+                    SwitchMode(VoucherMode.Issue, resetForm: false, syncRecentFilter: false);
+                }
+                else
+                {
+                    ApplyModeUi();
+                }
+
+                ReloadRecent();
             }, ("all", "전체"), ("receive", "입고"), ("issue", "출고")));
 
+            // Already filtered in ReloadRecent by type; keep client filter as safety net.
             var filtered = docFilter switch
             {
                 "receive" => recent.Where(r => r.DocType == DocumentType.Receipt).ToList(),
@@ -282,7 +340,13 @@ public sealed class ReceiveIssueView : WorkspaceView
             recentHost.Children.Add(recentFilterHost);
             if (filtered.Count == 0)
             {
-                recentHost.Children.Add(UiComponents.EmptyState("최근 전표가 없습니다", "품목을 추가한 뒤 저장하세요."));
+                var emptyTitle = docFilter switch
+                {
+                    "receive" => "최근 입고 전표가 없습니다",
+                    "issue" => "최근 출고 전표가 없습니다",
+                    _ => "최근 전표가 없습니다"
+                };
+                recentHost.Children.Add(UiComponents.EmptyState(emptyTitle, "품목을 추가한 뒤 저장하세요."));
                 recentGrid = null;
                 return;
             }
@@ -575,7 +639,7 @@ public sealed class ReceiveIssueView : WorkspaceView
             RenderCart();
         });
 
-        saveButton = Primary("입고 저장", (_, _) =>
+        saveButton = Primary(currentMode == VoucherMode.Receive ? "입고 저장" : "출고 저장", (_, _) =>
         {
             if (cart.Count == 0)
             {
@@ -659,7 +723,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         var modeToggle = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
         if (canReceive)
         {
-            var receiveRadio = new RadioButton
+            receiveRadio = new RadioButton
             {
                 Content = "입고",
                 GroupName = "VoucherMode",
@@ -669,17 +733,19 @@ public sealed class ReceiveIssueView : WorkspaceView
             };
             receiveRadio.Checked += (_, _) =>
             {
-                if (receiveRadio.IsChecked == true)
+                if (suppressModeRadio || receiveRadio.IsChecked != true)
                 {
-                    SwitchMode(VoucherMode.Receive);
+                    return;
                 }
+
+                SwitchMode(VoucherMode.Receive);
             };
             modeToggle.Children.Add(receiveRadio);
         }
 
         if (canIssue)
         {
-            var issueRadio = new RadioButton
+            issueRadio = new RadioButton
             {
                 Content = "출고",
                 GroupName = "VoucherMode",
@@ -688,10 +754,12 @@ public sealed class ReceiveIssueView : WorkspaceView
             };
             issueRadio.Checked += (_, _) =>
             {
-                if (issueRadio.IsChecked == true)
+                if (suppressModeRadio || issueRadio.IsChecked != true)
                 {
-                    SwitchMode(VoucherMode.Issue);
+                    return;
                 }
+
+                SwitchMode(VoucherMode.Issue);
             };
             modeToggle.Children.Add(issueRadio);
         }
