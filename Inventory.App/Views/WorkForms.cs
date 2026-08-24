@@ -1008,15 +1008,15 @@ public sealed class StatsView : WorkspaceView
         {
             ApplyReportKindUi();
             using var db = AppHost.OpenDb();
+            var baseAnchor = anchor.SelectedDate ?? DateTime.Today;
             if (isSupplierMonthly)
             {
-                var baseAnchor = anchor.SelectedDate ?? DateTime.Today;
                 current = ReportAnalytics.QuerySupplierMonthlyPurchases(db, baseAnchor, 6);
                 summary.Text = current.Count == 0
                     ? "해당 기간 거래처별 구매 내역이 없습니다."
                     : $"총 {current.Count:N0}건 · 구매 {current.Sum(r => r.ReceiptQty):N3} · 금액 {current.Sum(r => r.PurchaseAmount):N0}원";
                 chartHost.Children.Clear();
-                var display = current
+                var supplierDisplay = current
                     .OrderBy(r => r.PeriodLabel, StringComparer.Ordinal)
                     .ThenBy(r => r.Dimension, StringComparer.Ordinal)
                     .Select(r => new
@@ -1027,13 +1027,13 @@ public sealed class StatsView : WorkspaceView
                         구매금액 = r.PurchaseAmount.ToString("N0") + "원"
                     }).ToList();
                 gridHost.Children.Clear();
-                if (display.Count == 0)
+                if (supplierDisplay.Count == 0)
                 {
                     gridHost.Children.Add(UiComponents.EmptyState("구매 내역이 없습니다", "입고 전표를 등록하거나 기준월을 바꿔 보세요."));
                 }
                 else
                 {
-                    gridHost.Children.Add(TableGrid(display,
+                    gridHost.Children.Add(TableGrid(supplierDisplay,
                         new ColumnSpec("월", "월"),
                         new ColumnSpec("거래처", "거래처"),
                         new ColumnSpec("구매수량", "구매수량", ColumnAlign.Right),
@@ -1058,9 +1058,7 @@ public sealed class StatsView : WorkspaceView
                 3 => ReportDimension.Supplier,
                 _ => ReportDimension.Category
             };
-            var baseAnchor = anchor.SelectedDate ?? DateTime.Today;
             var periodsBack = trend.IsChecked == true && period != ReportPeriodKind.Custom ? 6 : 1;
-            using var db = AppHost.OpenDb();
             current = ReportAnalytics.QueryTrend(
                 db, period, baseAnchor, dim, periodsBack, customStart.SelectedDate, customEnd.SelectedDate);
             summary.Text = current.Count == 0
