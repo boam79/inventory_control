@@ -217,6 +217,20 @@ public class ShellLayoutTests
         Assert.Contains("itemSearch.SelectionChanged += _ => Reload();", forms, StringComparison.Ordinal);
         Assert.Contains("LOT 상세", forms, StringComparison.Ordinal);
         Assert.DoesNotContain("(\"유효기간\", nameof(StockRow.유효기간))", forms, StringComparison.Ordinal);
+        Assert.Contains("총 재고 금액", forms, StringComparison.Ordinal);
+        Assert.Contains("nameof(StockRow.재고금액)", forms, StringComparison.Ordinal);
+        Assert.Contains("ExportStockList", forms, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Stats_view_supports_supplier_monthly_purchase_report()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        Assert.Contains("거래처별 월별 구매내역", forms, StringComparison.Ordinal);
+        Assert.Contains("QuerySupplierMonthlyPurchases", forms, StringComparison.Ordinal);
+        Assert.Contains("ExportSupplierMonthlyPurchases", forms, StringComparison.Ordinal);
+        Assert.Contains("(\"월\", \"월\")", forms, StringComparison.Ordinal);
+        Assert.Contains("(\"거래처\", \"거래처\")", forms, StringComparison.Ordinal);
     }
 
     [Fact]

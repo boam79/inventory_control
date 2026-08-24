@@ -211,6 +211,51 @@ public sealed class OperationsTests : IDisposable
         Assert.Equal("품목코드", sheet.Cell(1, 1).GetString());
         Assert.Equal("M001", sheet.Cell(2, 1).GetString());
         Assert.Equal(7m, sheet.Cell(2, 3).GetValue<decimal>());
+        Assert.Equal("단가", sheet.Cell(1, 4).GetString());
+        Assert.Equal("재고금액", sheet.Cell(1, 5).GetString());
+    }
+
+    [Fact]
+    public void Excel_stock_list_export_includes_filtered_rows_and_total()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 7, DateTime.Today.AddDays(-1), DateTime.Today.AddDays(20));
+        svc.ConfirmOpening("M001");
+        svc.Receive(DateTime.Today, null, "R1",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 3, UnitPrice = 100, LotNumber = "A", ExpiryDate = DateTime.Today.AddDays(365) }]);
+        var rows = svc.SearchStockSnapshots("M001");
+        var path = Path.Combine(_work, "stock-list.xlsx");
+        ExcelCatalog.ExportStockList(rows, path, rows.Sum(r => r.StockValue ?? 0));
+        using var wb = new XLWorkbook(path);
+        var sheet = wb.Worksheet("재고목록");
+        Assert.Equal("재고목록", sheet.Name);
+        Assert.Equal("M001", sheet.Cell(2, 1).GetString());
+        Assert.Equal(300m, sheet.Cell(2, 5).GetValue<decimal>());
+        Assert.Equal("합계", sheet.Cell(3, 1).GetString());
+        Assert.Equal(300m, sheet.Cell(3, 5).GetValue<decimal>());
+    }
+
+    [Fact]
+    public void Excel_supplier_monthly_export_has_vendor_columns()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 10, DateTime.Today.AddDays(-1), DateTime.Today.AddDays(20));
+        svc.ConfirmOpening("M001");
+        var sup = svc.CreateSupplier("메디칼A");
+        svc.Receive(new DateTime(2026, 8, 2), sup.Id, "R1",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 4, UnitPrice = 50, LotNumber = "A", ExpiryDate = DateTime.Today.AddDays(365) }]);
+        var rows = ReportAnalytics.QuerySupplierMonthlyPurchases(db, new DateTime(2026, 8, 15), 1);
+        var path = Path.Combine(_work, "supplier-monthly.xlsx");
+        ExcelCatalog.ExportSupplierMonthlyPurchases(rows, path);
+        using var wb = new XLWorkbook(path);
+        var sheet = wb.Worksheet("거래처별월별구매");
+        Assert.Equal("거래처", sheet.Cell(1, 2).GetString());
+        Assert.Equal("메디칼A", sheet.Cell(2, 2).GetString());
+        Assert.Equal(200m, sheet.Cell(2, 4).GetValue<decimal>());
     }
 
     [Fact]

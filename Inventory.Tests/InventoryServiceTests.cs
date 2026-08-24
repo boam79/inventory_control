@@ -278,6 +278,23 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Contains(svc.ReorderItems(), i => i.Code == "M001");
     }
 
+    [Fact]
+    public void Stock_snapshot_includes_unit_cost_and_stock_value()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M010", "거즈", "드레싱", "개", "개", 10);
+        svc.SaveOpeningDraft("M010", "OPEN", 20, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("M010");
+        svc.Receive(new DateTime(2026, 8, 1), null, "R1",
+            [new ReceiptLineRequest { ItemCode = "M010", Quantity = 10, UnitPrice = 100, LotNumber = "A", ExpiryDate = new DateTime(2027, 1, 1) }]);
+
+        var row = svc.SearchStockSnapshots("M010").Single();
+        Assert.Equal(30m, row.OnHand);
+        Assert.Equal(1000m / 30m, row.UnitCost);
+        Assert.Equal(1000m, row.StockValue);
+    }
+
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

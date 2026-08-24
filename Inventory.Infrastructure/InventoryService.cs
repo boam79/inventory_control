@@ -450,7 +450,7 @@ public sealed class InventoryService
 
         var items = itemQuery
             .OrderBy(i => i.Code)
-            .Select(i => new { i.Id, i.Code, i.Name, i.IsActive, i.OpeningStatus, i.MinStock })
+            .Select(i => new { i.Id, i.Code, i.Name, i.IsActive, i.OpeningStatus, i.MinStock, i.MovingAverageCost, i.ReferencePrice })
             .ToList();
         var qty = _db.Lots.AsNoTracking()
             .GroupBy(l => l.ItemId)
@@ -469,7 +469,9 @@ public sealed class InventoryService
                 ? null
                 : qty.GetValueOrDefault(item.Id);
             var status = Classify(item.IsActive, item.OpeningStatus, item.MinStock, onHand, expiring.Contains(item.Id));
-            return new StockSnapshot(item.Code, item.Name, onHand, status, item.MinStock);
+            var unitCost = item.MovingAverageCost != 0 ? item.MovingAverageCost : item.ReferencePrice;
+            decimal? stockValue = onHand is { } hand ? hand * unitCost : null;
+            return new StockSnapshot(item.Code, item.Name, onHand, status, item.MinStock, unitCost, stockValue);
         });
         if (take is not null)
         {

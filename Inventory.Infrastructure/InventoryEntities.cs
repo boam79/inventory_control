@@ -167,7 +167,9 @@ public sealed record StockSnapshot(
     string Name,
     decimal? OnHand,
     StockStatusKind Status,
-    decimal MinStock = 0);
+    decimal MinStock = 0,
+    decimal UnitCost = 0,
+    decimal? StockValue = null);
 
 public sealed record DocumentSummary(
     int Id,

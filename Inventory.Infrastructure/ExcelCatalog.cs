@@ -129,13 +129,15 @@ public static class ExcelCatalog
         stock.Cell(1, 1).Value = "품목코드";
         stock.Cell(1, 2).Value = "품목명";
         stock.Cell(1, 3).Value = "현재재고";
-        stock.Cell(1, 4).Value = "상태";
+        stock.Cell(1, 4).Value = "단가";
+        stock.Cell(1, 5).Value = "재고금액";
+        stock.Cell(1, 6).Value = "상태";
         var row = 2;
+        decimal totalValue = 0;
         foreach (var snap in svc.SearchStockSnapshots(string.Empty))
         {
             stock.Cell(row, 1).Value = snap.Code;
             stock.Cell(row, 2).Value = snap.Name;
-            stock.Cell(row, 3).Value = snap.OnHand?.ToString() ?? "미설정";
             if (snap.OnHand is { } qty)
             {
                 stock.Cell(row, 3).SetValue(qty);
@@ -145,9 +147,23 @@ public static class ExcelCatalog
                 stock.Cell(row, 3).Value = "미설정";
             }
 
-            stock.Cell(row, 4).Value = StatusKo(snap.Status);
+            stock.Cell(row, 4).Value = snap.UnitCost;
+            if (snap.StockValue is { } value)
+            {
+                stock.Cell(row, 5).SetValue(value);
+                totalValue += value;
+            }
+            else
+            {
+                stock.Cell(row, 5).Value = "—";
+            }
+
+            stock.Cell(row, 6).Value = StatusKo(snap.Status);
             row++;
         }
+
+        stock.Cell(row, 1).Value = "합계";
+        stock.Cell(row, 5).SetValue(totalValue);
 
         var reorder = wb.AddWorksheet("발주필요");
         reorder.Cell(1, 1).Value = "품목코드";
@@ -197,6 +213,77 @@ public static class ExcelCatalog
                 usage.Cell(row, 5).Value = line.UnitCostSnapshot;
                 row++;
             }
+        }
+
+        wb.SaveAs(path);
+    }
+
+    public static void ExportStockList(IReadOnlyList<StockSnapshot> rows, string path, decimal totalValue)
+    {
+        using var wb = new XLWorkbook();
+        var sheet = wb.AddWorksheet("재고목록");
+        sheet.Cell(1, 1).Value = "품목코드";
+        sheet.Cell(1, 2).Value = "품목명";
+        sheet.Cell(1, 3).Value = "현재재고";
+        sheet.Cell(1, 4).Value = "단가";
+        sheet.Cell(1, 5).Value = "재고금액";
+        sheet.Cell(1, 6).Value = "상태";
+        var row = 2;
+        foreach (var snap in rows)
+        {
+            sheet.Cell(row, 1).Value = snap.Code;
+            sheet.Cell(row, 2).Value = snap.Name;
+            if (snap.OnHand is { } qty)
+            {
+                sheet.Cell(row, 3).SetValue(qty);
+            }
+            else
+            {
+                sheet.Cell(row, 3).Value = "미설정";
+            }
+
+            sheet.Cell(row, 4).SetValue(snap.UnitCost);
+            if (snap.StockValue is { } value)
+            {
+                sheet.Cell(row, 5).SetValue(value);
+            }
+            else
+            {
+                sheet.Cell(row, 5).Value = "—";
+            }
+
+            sheet.Cell(row, 6).Value = StatusKo(snap.Status);
+            row++;
+        }
+
+        sheet.Cell(row, 1).Value = "합계";
+        sheet.Cell(row, 5).SetValue(totalValue);
+        wb.SaveAs(path);
+    }
+
+    public static void ExportSupplierMonthlyPurchases(IReadOnlyList<ReportRow> rows, string path)
+    {
+        using var wb = new XLWorkbook();
+        var sheet = wb.AddWorksheet("거래처별월별구매");
+        sheet.Cell(1, 1).Value = "월";
+        sheet.Cell(1, 2).Value = "거래처";
+        sheet.Cell(1, 3).Value = "구매수량";
+        sheet.Cell(1, 4).Value = "구매금액";
+        var row = 2;
+        foreach (var item in rows.OrderBy(r => r.PeriodLabel, StringComparer.Ordinal).ThenBy(r => r.Dimension, StringComparer.Ordinal))
+        {
+            sheet.Cell(row, 1).Value = item.PeriodLabel;
+            sheet.Cell(row, 2).Value = item.Dimension;
+            sheet.Cell(row, 3).Value = item.ReceiptQty;
+            sheet.Cell(row, 4).Value = item.PurchaseAmount;
+            row++;
+        }
+
+        if (rows.Count > 0)
+        {
+            sheet.Cell(row, 1).Value = "합계";
+            sheet.Cell(row, 3).Value = rows.Sum(r => r.ReceiptQty);
+            sheet.Cell(row, 4).Value = rows.Sum(r => r.PurchaseAmount);
         }
 
         wb.SaveAs(path);

@@ -698,6 +698,8 @@ public sealed class StockView : WorkspaceView
         public required string 품목 { get; init; }
         public required string 코드 { get; init; }
         public required string 현재고 { get; init; }
+        public required string 단가 { get; init; }
+        public required string 재고금액 { get; init; }
         public required string 상태 { get; init; }
         public required StockStatusKind Kind { get; init; }
     }
@@ -714,8 +716,10 @@ public sealed class StockView : WorkspaceView
         });
         var page = 1;
         var all = new List<StockRow>();
+        var filteredSnaps = new List<StockSnapshot>();
         var gridHost = new StackPanel();
         var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
+        var totalValueBanner = new TextBlock { Margin = new Thickness(0, 0, 0, 8), FontWeight = FontWeights.SemiBold };
         var pageText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         var lotHost = new StackPanel();
         var lotExpander = new Expander { Header = "LOT 상세", IsExpanded = false, Margin = new Thickness(0, 12, 0, 0) };
@@ -766,10 +770,16 @@ public sealed class StockView : WorkspaceView
             var slice = all.Skip((page - 1) * UiLayout.PageSize).Take(UiLayout.PageSize).ToList();
             count.Text = $"총 {all.Count:N0}건";
             pageText.Text = $"{page}/{pages}";
+            var totalValue = filteredSnaps.Sum(s => s.StockValue ?? 0);
+            totalValueBanner.Text = filteredSnaps.Count == 0
+                ? "총 재고 금액: —"
+                : $"총 재고 금액: {totalValue:N0}원";
             var next = TableGrid(slice,
                 new ColumnSpec("품목", nameof(StockRow.품목)),
                 new ColumnSpec("코드", nameof(StockRow.코드)),
                 new ColumnSpec("현재고", nameof(StockRow.현재고), ColumnAlign.Right),
+                new ColumnSpec("단가", nameof(StockRow.단가), ColumnAlign.Right),
+                new ColumnSpec("재고금액", nameof(StockRow.재고금액), ColumnAlign.Right),
                 new ColumnSpec("상태", nameof(StockRow.상태), Width: 96));
             next.LoadingRow += (_, e) =>
             {
@@ -830,11 +840,14 @@ public sealed class StockView : WorkspaceView
                 "exp" => snaps.Where(r => r.Status == StockStatusKind.Expiring),
                 _ => snaps
             };
-            all = shown.Select(s => new StockRow
+            filteredSnaps = shown.ToList();
+            all = filteredSnaps.Select(s => new StockRow
             {
                 품목 = s.Name,
                 코드 = s.Code,
                 현재고 = s.OnHand?.ToString("N3") ?? "미설정",
+                단가 = s.UnitCost > 0 ? $"{s.UnitCost:N0}원" : "—",
+                재고금액 = s.StockValue is { } value ? $"{value:N0}원" : "—",
                 상태 = StatusKo(s.Status),
                 Kind = s.Status
             }).ToList();
@@ -862,8 +875,26 @@ public sealed class StockView : WorkspaceView
         filters.Children.Add(chipsHost);
 
         var listBody = new StackPanel();
+        listBody.Children.Add(totalValueBanner);
         listBody.Children.Add(gridHost);
         listBody.Children.Add(Pager(count, pageText, () => { page--; Render(); }, () => { page++; Render(); }));
+        var actionRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        actionRow.Children.Add(Btn("Excel 내보내기", (_, _) =>
+        {
+            if (filteredSnaps.Count == 0)
+            {
+                SetBanner(pageBanner, "내보낼 재고 목록이 없습니다.", isError: true);
+                return;
+            }
+
+            var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "재고목록.xlsx" };
+            if (dlg.ShowDialog() == true)
+            {
+                var total = filteredSnaps.Sum(s => s.StockValue ?? 0);
+                ExcelCatalog.ExportStockList(filteredSnaps, dlg.FileName, total);
+                SetBanner(pageBanner, "재고 목록을 Excel로 저장했습니다.");
+            }
+        }));
         var shortcutRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
         if (perms.CanReceive)
         {
@@ -904,6 +935,11 @@ public sealed class StockView : WorkspaceView
             listBody.Children.Add(shortcutRow);
         }
 
+        if (actionRow.Children.Count > 0)
+        {
+            listBody.Children.Add(actionRow);
+        }
+
         listBody.Children.Add(lotExpander);
 
         Content = PageRoot(pageBanner,
@@ -919,6 +955,12 @@ public sealed class StatsView : WorkspaceView
     public StatsView()
     {
         var pageBanner = CreatePageBanner();
+        var reportKind = new ComboBox
+        {
+            ItemsSource = new[] { "집계 보고서", "거래처별 월별 구매내역" },
+            SelectedIndex = 0,
+            Width = 220
+        };
         var kind = new ComboBox { ItemsSource = new[] { "일", "월", "분기", "년", "기간지정" }, SelectedIndex = 1, Width = 140 };
         var dimension = new ComboBox { ItemsSource = new[] { "품목", "분류", "부서", "공급업체" }, SelectedIndex = 1, Width = 140 };
         var anchor = Date(DateTime.Today);
@@ -933,13 +975,74 @@ public sealed class StatsView : WorkspaceView
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 8, 0, 0)
         };
+        var aggregateFilters = new StackPanel();
+        aggregateFilters.Children.Add(FormRow(Field("기간", kind), Field("기준일", anchor), Field("집계", dimension)));
+        aggregateFilters.Children.Add(customRow);
+        aggregateFilters.Children.Add(trend);
+        var supplierFilters = new StackPanel { Visibility = Visibility.Collapsed };
+        supplierFilters.Children.Add(FormRow(Field("기준월", anchor)));
+        supplierFilters.Children.Add(new TextBlock
+        {
+            Text = "최근 6개월 동안 거래처별 입고 수량·구매 금액을 표시합니다.",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+            Opacity = 0.85
+        });
+        var filterHost = new StackPanel();
+        filterHost.Children.Add(aggregateFilters);
+        filterHost.Children.Add(supplierFilters);
         IReadOnlyList<ReportRow> current = [];
         var gridHost = new StackPanel();
         var chartHost = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
         var summary = new TextBlock { Margin = new Thickness(0, 0, 0, 8), FontWeight = FontWeights.SemiBold };
+        var isSupplierMonthly = false;
+
+        void ApplyReportKindUi()
+        {
+            isSupplierMonthly = reportKind.SelectedIndex == 1;
+            aggregateFilters.Visibility = isSupplierMonthly ? Visibility.Collapsed : Visibility.Visible;
+            supplierFilters.Visibility = isSupplierMonthly ? Visibility.Visible : Visibility.Collapsed;
+        }
 
         void Reload()
         {
+            ApplyReportKindUi();
+            using var db = AppHost.OpenDb();
+            if (isSupplierMonthly)
+            {
+                var baseAnchor = anchor.SelectedDate ?? DateTime.Today;
+                current = ReportAnalytics.QuerySupplierMonthlyPurchases(db, baseAnchor, 6);
+                summary.Text = current.Count == 0
+                    ? "해당 기간 거래처별 구매 내역이 없습니다."
+                    : $"총 {current.Count:N0}건 · 구매 {current.Sum(r => r.ReceiptQty):N3} · 금액 {current.Sum(r => r.PurchaseAmount):N0}원";
+                chartHost.Children.Clear();
+                var display = current
+                    .OrderBy(r => r.PeriodLabel, StringComparer.Ordinal)
+                    .ThenBy(r => r.Dimension, StringComparer.Ordinal)
+                    .Select(r => new
+                    {
+                        월 = r.PeriodLabel,
+                        거래처 = r.Dimension,
+                        구매수량 = r.ReceiptQty.ToString("N3"),
+                        구매금액 = r.PurchaseAmount.ToString("N0") + "원"
+                    }).ToList();
+                gridHost.Children.Clear();
+                if (display.Count == 0)
+                {
+                    gridHost.Children.Add(UiComponents.EmptyState("구매 내역이 없습니다", "입고 전표를 등록하거나 기준월을 바꿔 보세요."));
+                }
+                else
+                {
+                    gridHost.Children.Add(TableGrid(display,
+                        new ColumnSpec("월", "월"),
+                        new ColumnSpec("거래처", "거래처"),
+                        new ColumnSpec("구매수량", "구매수량", ColumnAlign.Right),
+                        new ColumnSpec("구매금액", "구매금액")));
+                }
+
+                return;
+            }
+
             var period = kind.SelectedIndex switch
             {
                 0 => ReportPeriodKind.Day,
@@ -1034,6 +1137,7 @@ public sealed class StatsView : WorkspaceView
             }
         }
 
+        reportKind.SelectionChanged += (_, _) => Reload();
         kind.SelectionChanged += (_, _) =>
         {
             customRow.Visibility = kind.SelectedIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
@@ -1053,9 +1157,8 @@ public sealed class StatsView : WorkspaceView
         trend.Unchecked += (_, _) => Reload();
 
         var filters = new StackPanel();
-        filters.Children.Add(FormRow(Field("기간", kind), Field("기준일", anchor), Field("집계", dimension)));
-        filters.Children.Add(customRow);
-        filters.Children.Add(trend);
+        filters.Children.Add(FormRow(Field("보고서", reportKind)));
+        filters.Children.Add(filterHost);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
         actions.Children.Add(Primary("적용", (_, _) => Reload()));
         actions.Children.Add(Btn("Excel 내보내기", (_, _) =>
@@ -1065,10 +1168,21 @@ public sealed class StatsView : WorkspaceView
                 return;
             }
 
-            var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "통계보고서.xlsx" };
-            if (dlg.ShowDialog() == true)
+            if (isSupplierMonthly)
             {
-                ExcelCatalog.ExportReport(current, dlg.FileName);
+                var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "거래처별월별구매내역.xlsx" };
+                if (dlg.ShowDialog() == true)
+                {
+                    ExcelCatalog.ExportSupplierMonthlyPurchases(current, dlg.FileName);
+                }
+
+                return;
+            }
+
+            var reportDlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "통계보고서.xlsx" };
+            if (reportDlg.ShowDialog() == true)
+            {
+                ExcelCatalog.ExportReport(current, reportDlg.FileName);
             }
         }));
         filters.Children.Add(actions);
@@ -1079,6 +1193,7 @@ public sealed class StatsView : WorkspaceView
         Content = PageRoot(pageBanner,
             Section("검색·필터", filters),
             Section("집계 결과", list));
+        ApplyReportKindUi();
         Reload();
     }
 }

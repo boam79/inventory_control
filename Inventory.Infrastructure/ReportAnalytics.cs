@@ -228,6 +228,12 @@ public static class ReportAnalytics
             .ToList();
     }
 
+    public static IReadOnlyList<ReportRow> QuerySupplierMonthlyPurchases(
+        InventoryDbContext db,
+        DateTime anchor,
+        int monthsBack = 6) =>
+        QueryTrend(db, ReportPeriodKind.Month, anchor, ReportDimension.Supplier, monthsBack);
+
     public static MonthClosePreview PreviewMonth(InventoryDbContext db, int year, int month)
     {
         var start = new DateTime(year, month, 1);

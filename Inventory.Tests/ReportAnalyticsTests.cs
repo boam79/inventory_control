@@ -110,6 +110,35 @@ public sealed class ReportAnalyticsTests : IDisposable
     }
 
     [Fact]
+    public void Supplier_monthly_purchases_group_by_vendor_and_month()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "주사", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 100, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("M001");
+        var a = svc.CreateSupplier("메디칼A");
+        var b = svc.CreateSupplier("메디칼B");
+        svc.Receive(new DateTime(2026, 6, 5), a.Id, "R1",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 10, UnitPrice = 80, LotNumber = "A", ExpiryDate = new DateTime(2027, 1, 1) }]);
+        svc.Receive(new DateTime(2026, 6, 10), b.Id, "R2",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 5, UnitPrice = 100, LotNumber = "B", ExpiryDate = new DateTime(2027, 1, 1) }]);
+        svc.Receive(new DateTime(2026, 7, 3), a.Id, "R3",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 2, UnitPrice = 90, LotNumber = "C", ExpiryDate = new DateTime(2027, 1, 1) }]);
+
+        var rows = ReportAnalytics.QuerySupplierMonthlyPurchases(db, new DateTime(2026, 7, 15), 2);
+        var junA = rows.Single(r => r.PeriodLabel == "2026-06" && r.Dimension == "메디칼A");
+        var junB = rows.Single(r => r.PeriodLabel == "2026-06" && r.Dimension == "메디칼B");
+        var julA = rows.Single(r => r.PeriodLabel == "2026-07" && r.Dimension == "메디칼A");
+        Assert.Equal(10m, junA.ReceiptQty);
+        Assert.Equal(800m, junA.PurchaseAmount);
+        Assert.Equal(5m, junB.ReceiptQty);
+        Assert.Equal(500m, junB.PurchaseAmount);
+        Assert.Equal(2m, julA.ReceiptQty);
+        Assert.Equal(180m, julA.PurchaseAmount);
+    }
+
+    [Fact]
     public void Trailing_monthly_issues_can_filter_by_item()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);
