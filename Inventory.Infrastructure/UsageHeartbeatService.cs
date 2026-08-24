@@ -55,7 +55,6 @@ public enum UsageHeartbeatOutcome
 {
     Sent,
     SkippedDisabled,
-    SkippedAlreadySentToday,
     SkippedSmtpNotConfigured,
     Failed
 }
@@ -63,14 +62,11 @@ public enum UsageHeartbeatOutcome
 public sealed record UsageHeartbeatResult(UsageHeartbeatOutcome Outcome, string Message);
 
 /// <summary>
-/// 설치/사용 하트비트 메일. 하루 1회, 실패해도 업무를 막지 않습니다. 재고 데이터는 보내지 않습니다.
+/// 설치/사용 하트비트 메일. 앱 시작마다, 실패해도 업무를 막지 않습니다. 재고 데이터는 보내지 않습니다.
 /// </summary>
 public static class UsageHeartbeatService
 {
     private static int _smtpMissingLogged;
-
-    public static bool ShouldSendToday(DateOnly? lastSentLocalDate, DateOnly todayLocal) =>
-        lastSentLocalDate is null || lastSentLocalDate.Value != todayLocal;
 
     public static UsageHeartbeatResult TrySendToday(
         string appDataRoot,
@@ -86,16 +82,6 @@ public static class UsageHeartbeatService
             if (!options.Enabled)
             {
                 return new UsageHeartbeatResult(UsageHeartbeatOutcome.SkippedDisabled, "사용 알림이 꺼져 있습니다.");
-            }
-
-            var today = todayLocal ?? DateOnly.FromDateTime(DateTime.Now);
-            var state = UsageNotifyConfigStore.LoadState(appDataRoot);
-            var last = UsageNotifyConfigStore.ParseLastSentDate(state);
-            if (!ShouldSendToday(last, today))
-            {
-                return new UsageHeartbeatResult(
-                    UsageHeartbeatOutcome.SkippedAlreadySentToday,
-                    "오늘은 이미 사용 알림을 보냈습니다.");
             }
 
             if (!options.IsSmtpConfigured())
@@ -116,8 +102,6 @@ public static class UsageHeartbeatService
             var body = UsageNotifyMessage.BuildBody(payload);
             mail.Send(options, subject, body);
 
-            state.LastSentDate = today.ToString("yyyy-MM-dd");
-            UsageNotifyConfigStore.SaveState(appDataRoot, state);
             log?.Information("사용 알림 메일 발송 완료 InstallId={InstallId}", UsageNotifyMessage.ShortInstallId(payload.InstallId));
             return new UsageHeartbeatResult(UsageHeartbeatOutcome.Sent, "사용 알림을 보냈습니다.");
         }

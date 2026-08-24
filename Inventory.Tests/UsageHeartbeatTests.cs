@@ -25,15 +25,6 @@ public sealed class UsageHeartbeatTests
     }
 
     [Fact]
-    public void ShouldSendToday_throttles_once_per_day()
-    {
-        var today = new DateOnly(2026, 8, 24);
-        Assert.True(UsageHeartbeatService.ShouldSendToday(null, today));
-        Assert.False(UsageHeartbeatService.ShouldSendToday(today, today));
-        Assert.True(UsageHeartbeatService.ShouldSendToday(today.AddDays(-1), today));
-    }
-
-    [Fact]
     public void Payload_builder_subject_and_body_are_korean_labels()
     {
         var id = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -173,7 +164,7 @@ public sealed class UsageHeartbeatTests
     }
 
     [Fact]
-    public void TrySendToday_sends_once_then_throttles_same_day()
+    public void TrySendToday_sends_on_every_startup_call()
     {
         var root = NewTempRoot();
         try
@@ -194,8 +185,8 @@ public sealed class UsageHeartbeatTests
             var second = UsageHeartbeatService.TrySendToday(root, payload, sender, todayLocal: today, optionsOverride: options);
 
             Assert.Equal(UsageHeartbeatOutcome.Sent, first.Outcome);
-            Assert.Equal(UsageHeartbeatOutcome.SkippedAlreadySentToday, second.Outcome);
-            Assert.Single(sender.Calls);
+            Assert.Equal(UsageHeartbeatOutcome.Sent, second.Outcome);
+            Assert.Equal(2, sender.Calls.Count);
             Assert.Contains("스프링의원 재고", sender.Calls[0].Subject, StringComparison.Ordinal);
             Assert.Contains("설치 ID:", sender.Calls[0].Body, StringComparison.Ordinal);
         }
