@@ -323,7 +323,7 @@ public sealed class DashboardView : WorkspaceView
         var pageBanner = CreatePageBanner();
 
         var panel = new StackPanel();
-        panel.Children.Add(Note("표에서 품목을 하나 이상 선택하면 출고 추이를 봅니다. 여러 개를 고르면 함께 비교하고, 한 번에 최대 8개입니다. 예측은 참고용이며 자동 발주하지 않습니다."));
+        panel.Children.Add(Note("상단 그래프는 전체 출고 추이입니다. 아래에서 품목을 선택하면 품목별 작은 그래프로 비교합니다. 예측은 참고용이며 자동 발주하지 않습니다."));
 
         var cards = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
         cards.Children.Add(KpiCard("발주 필요", kpi.ReorderItems.ToString("N0"), "재고 ≤ 최소", warn: kpi.ReorderItems > 0, open: "stock"));
@@ -349,6 +349,7 @@ public sealed class DashboardView : WorkspaceView
         var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
         var pageText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         var chartHost = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var heroHost = new StackPanel();
         SKColor[] palette =
         [
             new SKColor(31, 111, 115),
@@ -366,9 +367,129 @@ public sealed class DashboardView : WorkspaceView
             chartHost.Children.Clear();
             chartHost.Children.Add(new TextBlock
             {
-                Text = $"표에서 품목의 「선택」을 켜면 출고 추이가 나옵니다. 여러 개를 고르면 함께 비교합니다. 한 번에 최대 {UiLayout.ChartItemMax}개입니다.",
+                Text = $"품목 「선택」을 켜면 아래에 품목별 작은 그래프가 나옵니다. 한 번에 최대 {UiLayout.ChartItemMax}개까지 비교합니다.",
                 Foreground = Brushes.DimGray,
                 TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        void ShowHeroChart()
+        {
+            using var inner = AppHost.OpenDb();
+            var monthly = DashboardMetrics.TrailingMonthlyIssues(inner, DateTime.Today);
+            var line = DashboardChartBuilder.BuildAggregateLine(monthly);
+            var historyLabels = monthly.Select(s => $"{s.Year}-{s.Month:00}").ToArray();
+            var heroLabels = DashboardChartBuilder.HeroLabels(historyLabels);
+            var color = new SKColor(31, 111, 115);
+            var gridPaint = new SolidColorPaint(new SKColor(230, 233, 236)) { StrokeThickness = 1 };
+            var actualValues = DashboardChartBuilder.ActualWithGap(line);
+            var forecastValues = DashboardChartBuilder.ForecastWithAnchor(line);
+            var (nextQty, deltaPct, hasForecast) = DashboardChartBuilder.NextMonthOutlook(line);
+            Brush deltaBrush = !hasForecast
+                ? Brushes.DimGray
+                : deltaPct > 0.5
+                    ? new SolidColorBrush(Color.FromRgb(46, 125, 79))
+                    : deltaPct < -0.5
+                        ? new SolidColorBrush(Color.FromRgb(192, 57, 43))
+                        : Brushes.DimGray;
+            var rangeText = historyLabels.Length == 0
+                ? "실적 데이터 없음"
+                : hasForecast
+                    ? $"{historyLabels[0]} — {heroLabels[^1]} (실적 + 예측)"
+                    : $"{historyLabels[0]} — {historyLabels[^1]}";
+
+            heroHost.Children.Clear();
+            var header = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var titleStack = new StackPanel();
+            titleStack.Children.Add(new TextBlock
+            {
+                Text = "전체 월별 출고와 다음 3개월 예측",
+                FontSize = 12,
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap
+            });
+            titleStack.Children.Add(new TextBlock
+            {
+                Text = rangeText,
+                FontSize = 11,
+                Foreground = Brushes.DimGray,
+                Margin = new Thickness(0, 2, 0, 0)
+            });
+            header.Children.Add(titleStack);
+            var badgeStack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+            badgeStack.Children.Add(new TextBlock
+            {
+                Text = "다음달 예상 출고",
+                FontSize = 11,
+                Foreground = Brushes.DimGray,
+                HorizontalAlignment = HorizontalAlignment.Right
+            });
+            badgeStack.Children.Add(new TextBlock
+            {
+                Text = hasForecast ? nextQty.ToString("N0") : "—",
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                Foreground = ResourceBrush("ClinicAccentBrush", Color.FromRgb(31, 111, 115)),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 2, 0, 0)
+            });
+            badgeStack.Children.Add(new TextBlock
+            {
+                Text = hasForecast && historyLabels.Length > 0 && line.Actual[^1] > 0
+                    ? deltaPct > 0.5
+                        ? $"▲ {Math.Abs(deltaPct):N0}% vs 이번달"
+                        : deltaPct < -0.5
+                            ? $"▼ {Math.Abs(deltaPct):N0}% vs 이번달"
+                            : "− vs 이번달"
+                    : hasForecast ? "예측 참고" : "데이터 부족",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = deltaBrush,
+                HorizontalAlignment = HorizontalAlignment.Right
+            });
+            Grid.SetColumn(badgeStack, 1);
+            header.Children.Add(badgeStack);
+            heroHost.Children.Add(header);
+
+            var heroSeries = new List<ISeries>
+            {
+                new LineSeries<double>
+                {
+                    Name = "실적 (출고)",
+                    Values = actualValues,
+                    Fill = null,
+                    GeometrySize = 6,
+                    LineSmoothness = 0,
+                    GeometryFill = new SolidColorPaint(color),
+                    GeometryStroke = new SolidColorPaint(new SKColor(255, 255, 255), 1.5f),
+                    Stroke = new SolidColorPaint(color, 2.5f),
+                    YToolTipLabelFormatter = point => $"{point.Coordinate.PrimaryValue:N0}개"
+                },
+                new LineSeries<double>
+                {
+                    Name = "3개월 예측",
+                    Values = forecastValues,
+                    Fill = null,
+                    GeometrySize = 6,
+                    LineSmoothness = 0,
+                    GeometryFill = new SolidColorPaint(new SKColor(255, 255, 255)),
+                    GeometryStroke = new SolidColorPaint(color, 1.5f),
+                    Stroke = new SolidColorPaint(color, 2)
+                    {
+                        PathEffect = new LiveChartsCore.SkiaSharpView.Painting.Effects.DashEffect([6, 4])
+                    },
+                    YToolTipLabelFormatter = point => $"{point.Coordinate.PrimaryValue:N0}개(예측)"
+                }
+            };
+            heroHost.Children.Add(new CartesianChart
+            {
+                Height = 280,
+                LegendPosition = LiveChartsCore.Measure.LegendPosition.Bottom,
+                Series = heroSeries,
+                XAxes = [new Axis { Labels = heroLabels, SeparatorsPaint = gridPaint, TextSize = 10, LabelsRotation = 0 }],
+                YAxes = [new Axis { MinLimit = 0, SeparatorsPaint = gridPaint, TextSize = 10 }]
             });
         }
 
@@ -667,8 +788,29 @@ public sealed class DashboardView : WorkspaceView
                 return row;
             }).ToList();
             suppressSelect = false;
+            if (!all.Any(r => r.선택))
+            {
+                suppressSelect = true;
+                var autoPick = all
+                    .Where(r => r.Kind is StockStatusKind.Reorder or StockStatusKind.OutOfStock)
+                    .Take(UiLayout.ChartItemMax)
+                    .ToList();
+                if (autoPick.Count == 0)
+                {
+                    autoPick = all.Take(Math.Min(3, UiLayout.ChartItemMax)).ToList();
+                }
+
+                foreach (var row in autoPick)
+                {
+                    row.선택 = true;
+                }
+
+                suppressSelect = false;
+            }
+
             page = 1;
             Render();
+            ShowHeroChart();
             ShowChart();
         }
 
@@ -712,10 +854,12 @@ public sealed class DashboardView : WorkspaceView
 
         Content = PageRoot(pageBanner,
             Section("요약", panel),
+            Section("전체 출고 추이 · 3개월 예측", heroHost),
+            Section("품목 출고 추이", chartHost),
             Section("검색·필터", filters),
-            Section("품목 목록", listBody),
-            Section("품목 출고 추이", chartHost));
+            Section("품목 목록", listBody));
         RenderChips();
+        ShowHeroChart();
         Reload();
     }
 

@@ -95,6 +95,7 @@ public partial class MainWindow : Window
         }
 
         NavPanel.Children.Clear();
+        var secondary = Application.Current?.TryFindResource("ClinicTextSecondaryBrush") as Brush ?? Brushes.Gray;
         foreach (var (groupLabel, _) in ShellPages.NavGroups)
         {
             var tags = ShellPages.OrderedTagsInGroup(groupLabel, flags).ToList();
@@ -103,18 +104,14 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
-            row.Children.Add(new TextBlock
+            NavPanel.Children.Add(new TextBlock
             {
                 Text = groupLabel,
-                FontSize = 11,
-                Foreground = Application.Current?.TryFindResource("ClinicTextSecondaryBrush") as Brush
-                             ?? Brushes.Gray,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 4),
-                MinWidth = 28
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = secondary,
+                Margin = new Thickness(14, 10, 14, 4)
             });
-            var buttons = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
             foreach (var tag in tags)
             {
                 var capture = tag;
@@ -122,14 +119,11 @@ public partial class MainWindow : Window
                 {
                     Content = ShellPages.NavLabel(capture),
                     Tag = capture,
-                    Style = (Style)FindResource("NavButton")
+                    Style = (Style)FindResource("SidebarNavButton")
                 };
                 button.Click += (_, _) => OpenMenu(capture);
-                buttons.Children.Add(button);
+                NavPanel.Children.Add(button);
             }
-
-            row.Children.Add(buttons);
-            NavPanel.Children.Add(row);
         }
 
         HighlightNav();
@@ -137,16 +131,10 @@ public partial class MainWindow : Window
 
     private void HighlightNav()
     {
-        foreach (var groupRow in NavPanel.Children.OfType<StackPanel>())
+        foreach (var child in NavPanel.Children.OfType<Button>())
         {
-            foreach (var wrap in groupRow.Children.OfType<WrapPanel>())
-            {
-                foreach (var child in wrap.Children.OfType<Button>())
-                {
-                    var active = child.Tag as string == _selectedMenu;
-                    child.Style = (Style)FindResource(active ? "NavButtonActive" : "NavButton");
-                }
-            }
+            var active = child.Tag as string == _selectedMenu;
+            child.Style = (Style)FindResource(active ? "SidebarNavButtonActive" : "SidebarNavButton");
         }
     }
 

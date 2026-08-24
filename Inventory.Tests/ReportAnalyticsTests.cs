@@ -196,6 +196,22 @@ public sealed class ReportAnalyticsTests : IDisposable
         Assert.Equal(800d, mixed.Lines[0].Actual[^1]);
         Assert.Equal(5d, mixed.Lines[1].Actual[^1]);
         Assert.Contains("대량품목", mixed.Insight, StringComparison.Ordinal);
+
+        var aggregateMonthly = Enumerable.Range(0, 13)
+            .Select(i =>
+            {
+                var month = new DateTime(2025, 8, 1).AddMonths(i);
+                return new MonthlyQty(month.Year, month.Month, 100 + i * 5);
+            })
+            .ToList();
+        var aggregateLine = DashboardChartBuilder.BuildAggregateLine(aggregateMonthly);
+        Assert.Equal("__aggregate__", aggregateLine.Code);
+        Assert.Equal(13, aggregateLine.Actual.Count);
+        Assert.Equal(3, aggregateLine.Forecast.Count);
+        var (nextQty, deltaPct, hasForecast) = DashboardChartBuilder.NextMonthOutlook(aggregateLine);
+        Assert.True(hasForecast);
+        Assert.True(nextQty > 0);
+        Assert.Contains("다음달 예상 출고", DashboardChartBuilder.FormatNextMonthBadge(aggregateLine), StringComparison.Ordinal);
     }
 
     public void Dispose()

@@ -72,6 +72,42 @@
             <Setter Property="Background" Value="{StaticResource ClinicAccentBrush}"/>
             <Setter Property="Foreground" Value="White"/>
         </Style>
+        <Style x:Key="SidebarNavButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+            <Setter Property="Margin" Value="8,0,8,2"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{StaticResource CornerRadiusSmall}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#F8F9FA"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SidebarNavButtonActive" TargetType="Button" BasedOn="{StaticResource SidebarNavButton}">
+            <Setter Property="Background" Value="{StaticResource ClinicSelectBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource ClinicAccentBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+            <Setter Property="BorderBrush" Value="{StaticResource ClinicAccentBrush}"/>
+            <Setter Property="Padding" Value="9,8,12,8"/>
+        </Style>
         <Style x:Key="FilterChip" TargetType="Button" BasedOn="{StaticResource GhostButton}">
             <Setter Property="Padding" Value="12,6"/>
             <Setter Property="MinWidth" Value="56"/>

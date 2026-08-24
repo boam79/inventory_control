@@ -115,4 +115,59 @@ public static class DashboardChartBuilder
         line.Actual.Count > 0 && line.Forecast.Count > 0
         && !double.IsNaN(line.Forecast[0])
         && line.Forecast[0] < line.Actual[^1] - 0.5;
+
+    /// <summary>Aggregate monthly outbound for the dashboard hero chart.</summary>
+    public static DashboardChartLine BuildAggregateLine(
+        IReadOnlyList<MonthlyQty> monthly,
+        string name = "전체 출고")
+    {
+        var hist = monthly.Select(s => (double)s.Qty).ToArray();
+        var forecast = UsageForecast.Predict(monthly.Select(s => s.Qty).ToList());
+        var predicted = forecast.Available
+            ? forecast.Future.Select(v => (double)v).ToArray()
+            : [double.NaN, double.NaN, double.NaN];
+        return new DashboardChartLine(name, "__aggregate__", hist, predicted);
+    }
+
+    public static string[] HeroLabels(IReadOnlyList<string> historyLabels) =>
+        historyLabels.Concat(["예측+1", "예측+2", "예측+3"]).ToArray();
+
+    public static (double NextQty, double DeltaPct, bool HasForecast) NextMonthOutlook(DashboardChartLine line)
+    {
+        if (line.Forecast.Count == 0 || double.IsNaN(line.Forecast[0]))
+        {
+            return (0, 0, false);
+        }
+
+        var lastActual = line.Actual.Count == 0 ? 0 : line.Actual[^1];
+        var next = line.Forecast[0];
+        if (lastActual <= 0)
+        {
+            return (next, 0, true);
+        }
+
+        return (next, (next - lastActual) / lastActual * 100, true);
+    }
+
+    public static string FormatNextMonthBadge(DashboardChartLine line)
+    {
+        var (nextQty, deltaPct, hasForecast) = NextMonthOutlook(line);
+        if (!hasForecast)
+        {
+            return "다음달 예상 출고 —";
+        }
+
+        if (line.Actual.Count == 0 || line.Actual[^1] <= 0)
+        {
+            return $"다음달 예상 출고 {nextQty:N0}";
+        }
+
+        if (Math.Abs(deltaPct) < 0.5)
+        {
+            return $"다음달 예상 출고 {nextQty:N0} −";
+        }
+
+        var arrow = deltaPct > 0 ? "▲" : "▼";
+        return $"다음달 예상 출고 {nextQty:N0} {arrow}{Math.Abs(deltaPct):N0}%";
+    }
 }

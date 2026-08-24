@@ -42,7 +42,7 @@ public class ShellLayoutTests
     }
 
     [Fact]
-    public void Main_window_uses_top_nav_and_page_title()
+    public void Main_window_uses_left_sidebar_and_page_title()
     {
         var xaml = ReadRepoFile("Inventory.App", "MainWindow.xaml");
         Assert.Contains("x:Name=\"PageTitle\"", xaml);
@@ -51,11 +51,14 @@ public class ShellLayoutTests
         Assert.Contains("재고관리", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ShortcutHint\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StatusBarLeft\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ClinicAccentBrush", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"MenuList\"", xaml);
-        var titleAt = xaml.IndexOf("x:Name=\"PageTitle\"", StringComparison.Ordinal);
-        var scrollAt = xaml.IndexOf("<ScrollViewer", StringComparison.Ordinal);
-        Assert.True(titleAt >= 0);
-        Assert.True(scrollAt < 0 || titleAt < scrollAt);
+        Assert.Contains("Width=\"208\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NavPanel\"", xaml, StringComparison.Ordinal);
+        var sidebarAt = xaml.IndexOf("Width=\"208\"", StringComparison.Ordinal);
+        var navAt = xaml.IndexOf("x:Name=\"NavPanel\"", StringComparison.Ordinal);
+        Assert.True(sidebarAt >= 0);
+        Assert.True(navAt > sidebarAt);
     }
 
     [Fact]
@@ -98,6 +101,11 @@ public class ShellLayoutTests
         var workspace = ReadRepoFile("Inventory.App", "Views", "WorkspaceViews.cs");
         Assert.Contains("품목 목록", workspace, StringComparison.Ordinal);
         Assert.Contains("품목 출고 추이", workspace, StringComparison.Ordinal);
+        Assert.Contains("전체 출고 추이 · 3개월 예측", workspace, StringComparison.Ordinal);
+        Assert.Contains("ShowHeroChart", workspace, StringComparison.Ordinal);
+        Assert.Contains("BuildAggregateLine", workspace, StringComparison.Ordinal);
+        Assert.Contains("Height = 280", workspace, StringComparison.Ordinal);
+        Assert.Contains("다음달 예상 출고", workspace, StringComparison.Ordinal);
         Assert.Contains("nameof(ItemRow.선택)", workspace, StringComparison.Ordinal);
         Assert.Contains("ChartItemMax", workspace, StringComparison.Ordinal);
         Assert.Contains("예측 수량", workspace, StringComparison.Ordinal);
@@ -116,6 +124,15 @@ public class ShellLayoutTests
         Assert.DoesNotContain("ColumnSeries<double>", workspace, StringComparison.Ordinal);
         Assert.DoesNotContain("Section(\"품목 등록\"", workspace, StringComparison.Ordinal);
         Assert.DoesNotContain("class CloseView", workspace, StringComparison.Ordinal);
+
+        var mainCs = ReadRepoFile("Inventory.App", "MainWindow.xaml.cs");
+        Assert.Contains("SidebarNavButton", mainCs, StringComparison.Ordinal);
+        Assert.Contains("SidebarNavButtonActive", mainCs, StringComparison.Ordinal);
+
+        var plot = ReadRepoFile("Inventory.Infrastructure", "DashboardChartPlot.cs");
+        Assert.Contains("BuildAggregateLine", plot, StringComparison.Ordinal);
+        Assert.Contains("NextMonthOutlook", plot, StringComparison.Ordinal);
+        Assert.Contains("FormatNextMonthBadge", plot, StringComparison.Ordinal);
 
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         Assert.DoesNotContain("class LotsView", forms, StringComparison.Ordinal);
