@@ -178,6 +178,7 @@ public sealed class InventoryServiceTests : IDisposable
         var summary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
         Assert.Equal("주사기", summary.FirstItemName);
         Assert.True(summary.IsCancelled);
+        Assert.Equal(40m, summary.TotalAmount);
     }
 
     [Fact]
@@ -200,6 +201,9 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Single(detail.Lines);
         Assert.Equal("M001", detail.Lines[0].ItemCode);
         Assert.Equal(2m, detail.Lines[0].Quantity);
+
+        var summary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
+        Assert.Equal(200m, summary.TotalAmount);
 
         svc.DeleteDocument(receipt.Id);
         Assert.True(db.Documents.Single(d => d.Id == receipt.Id).IsCancelled);

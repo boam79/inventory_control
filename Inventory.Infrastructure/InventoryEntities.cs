@@ -176,7 +176,8 @@ public sealed record DocumentSummary(
     string? DocumentNo,
     bool IsCancelled,
     int LineCount,
-    string? FirstItemName = null);
+    string? FirstItemName = null,
+    decimal TotalAmount = 0);
 
 public sealed record DocumentLineDetail(
     string ItemCode,

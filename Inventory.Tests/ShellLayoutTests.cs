@@ -230,6 +230,21 @@ public class ShellLayoutTests
     }
 
     [Fact]
+    public void Receive_issue_shows_line_and_document_totals()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var viewStart = forms.IndexOf("public sealed class ReceiveIssueView", StringComparison.Ordinal);
+        var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
+        Assert.True(viewStart >= 0 && stockStart > viewStart);
+        var view = forms[viewStart..stockStart];
+        Assert.Contains("Field(\"총금액\", lineTotal)", view, StringComparison.Ordinal);
+        Assert.Contains("UpdateLineTotal()", view, StringComparison.Ordinal);
+        Assert.Contains("nameof(CartLine.총금액)", view, StringComparison.Ordinal);
+        Assert.Contains("ColumnSpec(\"총금액\", \"총금액\"", view, StringComparison.Ordinal);
+        Assert.Contains("TotalAmount", view, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Receive_issue_recent_list_double_click_starts_edit()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");

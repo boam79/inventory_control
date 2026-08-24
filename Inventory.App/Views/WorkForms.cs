@@ -29,6 +29,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         public required decimal 수량 { get; init; }
         public decimal? 단가 { get; init; }
         public string? LOT { get; init; }
+        public string 총금액 => 단가 is { } p ? $"{(수량 * p):N0}원" : "—";
     }
 
     private sealed class RecentDocRow
@@ -38,6 +39,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
         public required int 품목수 { get; init; }
+        public required string 총금액 { get; init; }
         public required string 상태 { get; init; }
         public required DocumentType DocType { get; init; }
         public required bool IsCancelled { get; init; }
@@ -73,6 +75,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         var dept = Box();
         var qty = Box("1");
         var price = Box("0");
+        var lineTotal = new TextBlock { Text = "0원", MinWidth = 160, Width = 180, VerticalAlignment = VerticalAlignment.Center };
         var lot = Box();
         var receiveItemSearch = new ItemSearchBox(q =>
         {
@@ -118,6 +121,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         var itemFieldIssue = Field("품목", issueItemSearch.Input);
         var supplierField = Field("공급업체", supplier);
         var priceField = Field("단가", price);
+        var lineTotalField = Field("총금액", lineTotal);
         var deptField = Field("사용부서", dept);
         var lotField = Field("LOT", lot);
         var dateFieldReceive = Field("입고일", dateReceive);
@@ -137,6 +141,25 @@ public sealed class ReceiveIssueView : WorkspaceView
         DatePicker ActiveDatePicker() => currentMode == VoucherMode.Receive ? dateReceive : dateIssue;
         var newVoucherExpander = new Expander { IsExpanded = launch?.ExpandForm == true, Margin = new Thickness(0, 0, 0, 0) };
         Button? saveButton = null;
+
+        void UpdateLineTotal()
+        {
+            if (currentMode != VoucherMode.Receive)
+            {
+                return;
+            }
+
+            if (decimal.TryParse(qty.Text, CultureInfo.CurrentCulture, out var qv)
+                && decimal.TryParse(price.Text, CultureInfo.CurrentCulture, out var pv)
+                && qv > 0)
+            {
+                lineTotal.Text = $"{(qv * pv):N0}원";
+            }
+            else
+            {
+                lineTotal.Text = "—";
+            }
+        }
 
         void ClearEditBannerOnChange()
         {
@@ -163,6 +186,7 @@ public sealed class ReceiveIssueView : WorkspaceView
             dateFieldIssue.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             supplierField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
             priceField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
+            lineTotalField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
             deptField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             lotField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             newVoucherExpander.Header = isReceive ? "+ 새 입고" : "+ 새 출고";
@@ -207,6 +231,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
                 품목수 = d.LineCount,
+                총금액 = $"{d.TotalAmount:N0}원",
                 상태 = d.IsCancelled ? "삭제됨" : "저장",
                 DocType = d.Type,
                 IsCancelled = d.IsCancelled
@@ -246,6 +271,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 new ColumnSpec("전표", "전표"),
                 new ColumnSpec("품목", "품목"),
                 new ColumnSpec("품목수", "품목수", ColumnAlign.Right),
+                new ColumnSpec("총금액", "총금액", ColumnAlign.Right),
                 new ColumnSpec("상태", "상태", Width: 72));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as RecentDocRow;
             next.MouseDoubleClick += (_, _) =>
@@ -348,6 +374,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                     qty.Text = first.Quantity.ToString(CultureInfo.CurrentCulture);
                 }
 
+                UpdateLineTotal();
                 newVoucherExpander.IsExpanded = true;
                 SetBanner(pageBanner, $"전표 {detail.Id} 수정 중 — 저장하면 기존 전표는 삭제되고 새로 저장됩니다.");
             }
@@ -427,7 +454,8 @@ public sealed class ReceiveIssueView : WorkspaceView
                     new ColumnSpec("품목", nameof(CartLine.품목)),
                     new ColumnSpec("코드", nameof(CartLine.코드)),
                     new ColumnSpec("수량", nameof(CartLine.수량), ColumnAlign.Right),
-                    new ColumnSpec("단가", nameof(CartLine.단가), ColumnAlign.Right)));
+                    new ColumnSpec("단가", nameof(CartLine.단가), ColumnAlign.Right),
+                    new ColumnSpec("총금액", nameof(CartLine.총금액), ColumnAlign.Right)));
             }
             else
             {
@@ -604,13 +632,21 @@ public sealed class ReceiveIssueView : WorkspaceView
 
         supplier.TextChanged += (_, _) => ClearEditBannerOnChange();
         dept.TextChanged += (_, _) => ClearEditBannerOnChange();
-        qty.TextChanged += (_, _) => ClearEditBannerOnChange();
-        price.TextChanged += (_, _) => ClearEditBannerOnChange();
+        qty.TextChanged += (_, _) =>
+        {
+            ClearEditBannerOnChange();
+            UpdateLineTotal();
+        };
+        price.TextChanged += (_, _) =>
+        {
+            ClearEditBannerOnChange();
+            UpdateLineTotal();
+        };
         lot.TextChanged += (_, _) => ClearEditBannerOnChange();
         dateReceive.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
         dateIssue.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
 
-        var form = FormRow(itemFieldReceive, itemFieldIssue, dateFieldReceive, dateFieldIssue, supplierField, deptField, qtyField, priceField, lotField);
+        var form = FormRow(itemFieldReceive, itemFieldIssue, dateFieldReceive, dateFieldIssue, supplierField, deptField, qtyField, priceField, lineTotalField, lotField);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         actions.Children.Add(add);
         actions.Children.Add(saveButton);
@@ -625,6 +661,7 @@ public sealed class ReceiveIssueView : WorkspaceView
             Section("새 전표", newVoucherExpander),
             Section("최근 전표", recentHost));
         ApplyModeUi();
+        UpdateLineTotal();
         RenderCart();
         ReloadRecent();
 
