@@ -29,8 +29,8 @@ public sealed class ReceiveIssueView : WorkspaceView
         public required decimal 수량 { get; init; }
         public decimal? 단가 { get; init; }
         public string? LOT { get; init; }
-        public string 단가표시 => 단가 is { } p ? $"{p:N0}원" : "—";
-        public string 총금액 => 단가 is { } p ? $"{(수량 * p):N0}원" : "—";
+        public string 단가표시 => 단가 is { } p ? MoneyFormulas.FormatWon(p) : "—";
+        public string 총금액 => 단가 is { } p ? MoneyFormulas.FormatWon(MoneyFormulas.LineAmount(수량, p)) : "—";
     }
 
     private sealed class RecentDocRow
@@ -98,10 +98,12 @@ public sealed class ReceiveIssueView : WorkspaceView
                 .ToList();
         });
         var selectedCode = "";
+        VoucherMode currentMode = mode;
         receiveItemSearch.SelectionChanged += s => selectedCode = s?.Code ?? "";
         issueItemSearch.SelectionChanged += s =>
         {
             selectedCode = s?.Code ?? "";
+            FillIssueCost(s?.Code);
             if (s is null || !string.IsNullOrWhiteSpace(dept.Text))
             {
                 return;
@@ -138,24 +140,32 @@ public sealed class ReceiveIssueView : WorkspaceView
         var recentHost = new StackPanel();
         var recentFilterHost = new StackPanel();
         int? editingId = null;
-        VoucherMode currentMode = mode;
 
         DatePicker ActiveDatePicker() => currentMode == VoucherMode.Receive ? dateReceive : dateIssue;
         var newVoucherExpander = new Expander { IsExpanded = launch?.ExpandForm == true, Margin = new Thickness(0, 0, 0, 0) };
         Button? saveButton = null;
 
-        void UpdateLineTotal()
+        void FillIssueCost(string? code)
         {
-            if (currentMode != VoucherMode.Receive)
+            if (currentMode != VoucherMode.Issue || string.IsNullOrWhiteSpace(code))
             {
                 return;
             }
 
+            using var db = AppHost.OpenDb();
+            var snap = new InventoryService(db, AppHost.Actor).SearchStockSnapshots(code)
+                .FirstOrDefault(s => s.Code == code);
+            price.Text = snap is { UnitCost: > 0 } ? snap.UnitCost.ToString("0.####", CultureInfo.CurrentCulture) : "0";
+            UpdateLineTotal();
+        }
+
+        void UpdateLineTotal()
+        {
             if (decimal.TryParse(qty.Text, CultureInfo.CurrentCulture, out var qv)
                 && decimal.TryParse(price.Text, CultureInfo.CurrentCulture, out var pv)
                 && qv > 0)
             {
-                lineTotal.Text = $"{(qv * pv):N0}원";
+                lineTotal.Text = MoneyFormulas.FormatWon(MoneyFormulas.LineAmount(qv, pv));
             }
             else
             {
@@ -187,8 +197,15 @@ public sealed class ReceiveIssueView : WorkspaceView
             dateFieldReceive.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
             dateFieldIssue.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             supplierField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
-            priceField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
-            lineTotalField.Visibility = isReceive ? Visibility.Visible : Visibility.Collapsed;
+            priceField.Visibility = Visibility.Visible;
+            lineTotalField.Visibility = Visibility.Visible;
+            if (priceField.Children[0] is TextBlock priceLabel)
+            {
+                priceLabel.Text = isReceive ? "단가" : "단가(원가)";
+            }
+
+            price.IsReadOnly = !isReceive;
+            price.Background = isReceive ? Brushes.White : new SolidColorBrush(Color.FromRgb(245, 245, 245));
             deptField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             lotField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             newVoucherExpander.Header = isReceive ? "+ 새 입고" : "+ 새 출고";
@@ -196,6 +213,8 @@ public sealed class ReceiveIssueView : WorkspaceView
             {
                 saveButton.Content = isReceive ? "입고 저장" : "출고 저장";
             }
+
+            UpdateLineTotal();
         }
 
         void SwitchMode(VoucherMode next, bool resetForm = true)
@@ -233,8 +252,8 @@ public sealed class ReceiveIssueView : WorkspaceView
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
                 품목수 = d.LineCount,
-                단가 = d.UnitPrice is { } p ? $"{p:N0}원" : "—",
-                총금액 = $"{d.TotalAmount:N0}원",
+                단가 = d.UnitPrice is { } p ? MoneyFormulas.FormatWon(p) : "—",
+                총금액 = MoneyFormulas.FormatWon(d.TotalAmount),
                 상태 = d.IsCancelled ? "삭제됨" : "저장",
                 DocType = d.Type,
                 IsCancelled = d.IsCancelled
@@ -354,7 +373,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                         품목 = line.ItemName,
                         코드 = line.ItemCode,
                         수량 = line.Quantity,
-                        단가 = detail.Type == DocumentType.Receipt ? line.UnitPrice : null,
+                        단가 = line.UnitPrice,
                         LOT = line.LotNumber
                     });
                 }
@@ -373,6 +392,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                     {
                         issueItemSearch.SetSelection(first.ItemCode, first.ItemName);
                         lot.Text = first.LotNumber ?? "";
+                        price.Text = first.UnitPrice.ToString(CultureInfo.CurrentCulture);
                     }
 
                     qty.Text = first.Quantity.ToString(CultureInfo.CurrentCulture);
@@ -467,6 +487,8 @@ public sealed class ReceiveIssueView : WorkspaceView
                     new ColumnSpec("품목", nameof(CartLine.품목)),
                     new ColumnSpec("코드", nameof(CartLine.코드)),
                     new ColumnSpec("수량", nameof(CartLine.수량), ColumnAlign.Right),
+                    new ColumnSpec("단가", nameof(CartLine.단가표시), ColumnAlign.Right),
+                    new ColumnSpec("총금액", nameof(CartLine.총금액), ColumnAlign.Right),
                     new ColumnSpec("LOT", nameof(CartLine.LOT))));
             }
         }
@@ -499,12 +521,19 @@ public sealed class ReceiveIssueView : WorkspaceView
             }
             else
             {
+                decimal? cost = null;
+                if (decimal.TryParse(price.Text, CultureInfo.CurrentCulture, out var cv) && cv >= 0)
+                {
+                    cost = cv;
+                }
+
                 selectedCode = picked.Code;
                 cart.Add(new CartLine
                 {
                     품목 = picked.Name,
                     코드 = picked.Code,
                     수량 = qv,
+                    단가 = cost,
                     LOT = string.IsNullOrWhiteSpace(lot.Text) ? null : lot.Text.Trim()
                 });
             }
@@ -777,7 +806,7 @@ public sealed class StockView : WorkspaceView
             var totalValue = filteredSnaps.Sum(s => s.StockValue ?? 0);
             totalValueBanner.Text = filteredSnaps.Count == 0
                 ? "총 재고 금액: —"
-                : $"총 재고 금액: {totalValue:N0}원";
+                : $"총 재고 금액: {MoneyFormulas.FormatWon(totalValue)} (현재고 × 이동평균 단가)";
             var next = TableGrid(slice, allowMultiSelect: true,
                 new ColumnSpec("품목", nameof(StockRow.품목)),
                 new ColumnSpec("코드", nameof(StockRow.코드)),
@@ -849,9 +878,9 @@ public sealed class StockView : WorkspaceView
             {
                 품목 = s.Name,
                 코드 = s.Code,
-                현재고 = s.OnHand?.ToString("N3") ?? "미설정",
-                단가 = s.UnitCost > 0 ? $"{s.UnitCost:N0}원" : "—",
-                재고금액 = s.StockValue is { } value ? $"{value:N0}원" : "—",
+                현재고 = s.OnHand is { } qty ? MoneyFormulas.FormatQty(qty) : "미설정",
+                단가 = s.UnitCost > 0 ? MoneyFormulas.FormatWon(s.UnitCost) : "—",
+                재고금액 = s.StockValue is { } value ? MoneyFormulas.FormatWon(value) : "—",
                 상태 = StatusKo(s.Status),
                 Kind = s.Status
             }).ToList();

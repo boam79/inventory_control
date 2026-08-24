@@ -1,3 +1,4 @@
+using Inventory.Core;
 using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Infrastructure;
@@ -154,7 +155,8 @@ public sealed class InventoryService
 
         var item = RequireItem(code);
         item.OpeningStatus = OpeningStatus.InProgress;
-        UpsertLot(item, lotNumber, receivedDate, expiry, quantity, item.MovingAverageCost, null);
+        var openingCost = item.MovingAverageCost != 0 ? item.MovingAverageCost : item.ReferencePrice;
+        UpsertLot(item, lotNumber, receivedDate, expiry, quantity, openingCost, null);
         _db.SaveChanges();
     }
 
@@ -235,7 +237,7 @@ public sealed class InventoryService
                 ExpiryDate = line.ExpiryDate,
                 Quantity = line.Quantity,
                 UnitPrice = line.UnitPrice,
-                Amount = line.Quantity * line.UnitPrice,
+                Amount = MoneyFormulas.LineAmount(line.Quantity, line.UnitPrice),
                 UnitCostSnapshot = line.UnitPrice
             });
         }
@@ -278,7 +280,8 @@ public sealed class InventoryService
             }
 
             var lot = SelectLot(item, line.LotNumber, date, line.Quantity);
-            var costSnapshot = item.MovingAverageCost != 0 ? item.MovingAverageCost : lot.UnitCost;
+            RecalcAverage(item);
+            var costSnapshot = CurrentUnitCost(item, lot);
             lot.Quantity -= line.Quantity;
             RecalcAverage(item);
             doc.Lines.Add(new StockLine
@@ -289,7 +292,7 @@ public sealed class InventoryService
                 ExpiryDate = lot.ExpiryDate,
                 Quantity = line.Quantity,
                 UnitPrice = costSnapshot,
-                Amount = line.Quantity * costSnapshot,
+                Amount = MoneyFormulas.LineAmount(line.Quantity, costSnapshot),
                 UnitCostSnapshot = costSnapshot
             });
         }
@@ -333,7 +336,7 @@ public sealed class InventoryService
                     LotNumber = lot.LotNumber,
                     Quantity = delta,
                     UnitPrice = lot.UnitCost,
-                    Amount = Math.Abs(delta) * lot.UnitCost,
+                    Amount = MoneyFormulas.LineAmount(Math.Abs(delta), lot.UnitCost),
                     UnitCostSnapshot = lot.UnitCost
                 }
             }
@@ -470,7 +473,9 @@ public sealed class InventoryService
                 : qty.GetValueOrDefault(item.Id);
             var status = Classify(item.IsActive, item.OpeningStatus, item.MinStock, onHand, expiring.Contains(item.Id));
             var unitCost = item.MovingAverageCost != 0 ? item.MovingAverageCost : item.ReferencePrice;
-            decimal? stockValue = onHand is { } hand ? hand * unitCost : null;
+            decimal? stockValue = onHand is { } hand
+                ? MoneyFormulas.LineAmount(hand, unitCost)
+                : null;
             return new StockSnapshot(item.Code, item.Name, onHand, status, item.MinStock, unitCost, stockValue);
         });
         if (take is not null)
@@ -511,9 +516,7 @@ public sealed class InventoryService
                 LineCount = d.Lines.Count,
                 TotalAmount = d.Lines.Sum(l => l.Amount),
                 FirstItemId = d.Lines.OrderBy(l => l.Id).Select(l => (int?)l.ItemId).FirstOrDefault(),
-                FirstUnitPrice = d.Type == DocumentType.Receipt
-                    ? d.Lines.OrderBy(l => l.Id).Select(l => (decimal?)l.UnitPrice).FirstOrDefault()
-                    : null
+                FirstUnitPrice = d.Lines.OrderBy(l => l.Id).Select(l => (decimal?)l.UnitPrice).FirstOrDefault()
             })
             .ToList();
 
@@ -531,7 +534,7 @@ public sealed class InventoryService
                 s.LineCount,
                 s.FirstItemId.HasValue && names.TryGetValue(s.FirstItemId.Value, out var name) ? name : null,
                 s.TotalAmount,
-                s.FirstUnitPrice))
+                s.LineCount == 1 ? s.FirstUnitPrice : null))
             .ToList();
     }
 
@@ -695,6 +698,16 @@ public sealed class InventoryService
         var lots = _db.Lots.Where(l => l.ItemId == item.Id && l.Quantity > 0).ToList();
         var qty = lots.Sum(l => l.Quantity);
         item.MovingAverageCost = qty == 0 ? 0 : lots.Sum(l => l.Quantity * l.UnitCost) / qty;
+    }
+
+    private static decimal CurrentUnitCost(Item item, Lot lot)
+    {
+        if (item.MovingAverageCost != 0)
+        {
+            return item.MovingAverageCost;
+        }
+
+        return lot.UnitCost != 0 ? lot.UnitCost : item.ReferencePrice;
     }
 
     private void EnsurePeriodOpen(DateTime date)

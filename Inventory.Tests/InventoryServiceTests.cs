@@ -1,3 +1,4 @@
+using Inventory.Core;
 using Inventory.Infrastructure;
 
 namespace Inventory.Tests;
@@ -295,6 +296,52 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Equal(30m, row.OnHand);
         Assert.Equal(1000m / 30m, row.UnitCost);
         Assert.Equal(1000m, row.StockValue);
+        Assert.Equal(MoneyFormulas.LineAmount(row.OnHand!.Value, row.UnitCost), row.StockValue);
+    }
+
+    [Fact]
+    public void Opening_uses_reference_price_so_on_hand_times_unit_cost_equals_stock_value()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M020", "장갑", "소모품", "개", "개", 10);
+        db.Items.Single(i => i.Code == "M020").ReferencePrice = 400m;
+        db.SaveChanges();
+        svc.SaveOpeningDraft("M020", "OPEN", 10740, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1));
+        svc.ConfirmOpening("M020");
+
+        var row = svc.SearchStockSnapshots("M020").Single();
+        Assert.Equal(10740m, row.OnHand);
+        Assert.Equal(400m, row.UnitCost);
+        Assert.Equal(4_296_000m, row.StockValue);
+        Assert.Equal(MoneyFormulas.LineAmount(row.OnHand!.Value, row.UnitCost), row.StockValue);
+    }
+
+    [Fact]
+    public void Receive_and_issue_totals_equal_quantity_times_unit_price()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M021", "마스크", "소모품", "개", "개", 10);
+        db.Items.Single(i => i.Code == "M021").ReferencePrice = 80m;
+        db.SaveChanges();
+        svc.SaveOpeningDraft("M021", "OPEN", 10, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(90));
+        svc.ConfirmOpening("M021");
+        var receipt = svc.Receive(DateTime.Today, null, "R80",
+            [new ReceiptLineRequest { ItemCode = "M021", Quantity = 1, UnitPrice = 80, LotNumber = "N", ExpiryDate = DateTime.Today.AddDays(30) }]);
+        Assert.Equal(MoneyFormulas.LineAmount(1, 80), receipt.Lines.Single().Amount);
+
+        var receiveSummary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
+        Assert.Equal(80m, receiveSummary.TotalAmount);
+        Assert.Equal(80m, receiveSummary.UnitPrice);
+
+        var issue = svc.Issue(DateTime.Today, null, [new IssueLineRequest { ItemCode = "M021", Quantity = 2, LotNumber = "OPEN" }]);
+        var unit = issue.Lines.Single().UnitPrice;
+        Assert.Equal(MoneyFormulas.LineAmount(2, unit), issue.Lines.Single().Amount);
+
+        var issueSummary = svc.ListDocumentSummaries(10).Single(d => d.Id == issue.Id);
+        Assert.Equal(issue.Lines.Single().Amount, issueSummary.TotalAmount);
+        Assert.Equal(unit, issueSummary.UnitPrice);
     }
 
     public void Dispose()
