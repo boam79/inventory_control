@@ -173,7 +173,11 @@ public static class ReportAnalytics
     /// </summary>
     private static List<RawLine> LoadLines(InventoryDbContext db, DateTime start, DateTime end) =>
         db.StockLines.AsNoTracking()
-            .Where(l => !l.Document.IsCancelled && l.Document.DocumentDate >= start && l.Document.DocumentDate < end)
+            .Where(l =>
+                !l.Document.IsCancelled
+                && l.Document.DocumentDate >= start
+                && l.Document.DocumentDate < end
+                && (l.Document.Type == DocumentType.Issue || l.Document.Type == DocumentType.Receipt))
             .Join(db.Items.AsNoTracking(), l => l.ItemId, i => i.Id, (l, i) => new RawLine(
                 l.Document.Type,
                 l.Document.DocumentDate,

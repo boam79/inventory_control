@@ -1,4 +1,6 @@
+using Inventory.Core;
 using Inventory.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Tests;
 
@@ -107,6 +109,120 @@ public sealed class ReportAnalyticsTests : IDisposable
         Assert.Equal(500m, preview.PurchaseAmount);
         Assert.Equal(ReportUi.IssueQty, "출고수량");
         Assert.Equal(ReportUi.Period, "기간");
+    }
+
+    [Fact]
+    public void Category_aggregate_formulas_match_receipt_and_issue_lines()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var expiry = new DateTime(2027, 1, 1);
+        svc.CreateItem("A001", "거즈A", "드레싱", "개", "개", 100);
+        svc.CreateItem("B001", "주사B", "주사", "개", "개", 50);
+        svc.SaveOpeningDraft("A001", "OPEN-A", 100, new DateTime(2026, 1, 1), expiry);
+        svc.SaveOpeningDraft("B001", "OPEN-B", 100, new DateTime(2026, 1, 1), expiry);
+        svc.ConfirmOpening("A001");
+        svc.ConfirmOpening("B001");
+        svc.Receive(new DateTime(2026, 8, 5), null, "R1",
+        [
+            new ReceiptLineRequest { ItemCode = "A001", Quantity = 10, UnitPrice = 80, LotNumber = "L1", ExpiryDate = expiry },
+            new ReceiptLineRequest { ItemCode = "B001", Quantity = 5, UnitPrice = 120, LotNumber = "L2", ExpiryDate = expiry }
+        ]);
+        svc.Issue(new DateTime(2026, 8, 10), null,
+        [
+            new IssueLineRequest { ItemCode = "A001", Quantity = 3, LotNumber = "L1" },
+            new IssueLineRequest { ItemCode = "B001", Quantity = 2, LotNumber = "L2" }
+        ]);
+
+        var rows = ReportAnalytics.Query(db, ReportPeriodKind.Month, new DateTime(2026, 8, 15), ReportDimension.Category);
+        var dressing = rows.Single(r => r.Dimension == "드레싱");
+        var injection = rows.Single(r => r.Dimension == "주사");
+
+        Assert.Equal(3m, dressing.IssueQty);
+        Assert.Equal(10m, dressing.ReceiptQty);
+        Assert.Equal(MoneyFormulas.LineAmount(10m, 80m), dressing.PurchaseAmount);
+
+        Assert.Equal(2m, injection.IssueQty);
+        Assert.Equal(5m, injection.ReceiptQty);
+        Assert.Equal(MoneyFormulas.LineAmount(5m, 120m), injection.PurchaseAmount);
+
+        Assert.Equal(rows.Sum(r => r.IssueQty), dressing.IssueQty + injection.IssueQty);
+        Assert.Equal(rows.Sum(r => r.ReceiptQty), dressing.ReceiptQty + injection.ReceiptQty);
+        Assert.Equal(rows.Sum(r => r.PurchaseAmount), dressing.PurchaseAmount + injection.PurchaseAmount);
+
+        var manualPurchase = db.StockLines.AsNoTracking()
+            .Where(l => !l.Document.IsCancelled
+                        && l.Document.Type == DocumentType.Receipt
+                        && l.Document.DocumentDate >= new DateTime(2026, 8, 1)
+                        && l.Document.DocumentDate < new DateTime(2026, 9, 1))
+            .Join(db.Items.AsNoTracking(), l => l.ItemId, i => i.Id, (l, i) => new { i.Category, l.Quantity, l.Amount })
+            .GroupBy(x => x.Category)
+            .ToDictionary(g => g.Key, g => (Issue: 0m, Receipt: g.Sum(x => x.Quantity), Purchase: g.Sum(x => x.Amount)));
+
+        var manualIssue = db.StockLines.AsNoTracking()
+            .Where(l => !l.Document.IsCancelled
+                        && l.Document.Type == DocumentType.Issue
+                        && l.Document.DocumentDate >= new DateTime(2026, 8, 1)
+                        && l.Document.DocumentDate < new DateTime(2026, 9, 1))
+            .Join(db.Items.AsNoTracking(), l => l.ItemId, i => i.Id, (l, i) => new { i.Category, l.Quantity })
+            .GroupBy(x => x.Category)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+        Assert.Equal(manualIssue["드레싱"], dressing.IssueQty);
+        Assert.Equal(manualPurchase["드레싱"].Receipt, dressing.ReceiptQty);
+        Assert.Equal(manualPurchase["드레싱"].Purchase, dressing.PurchaseAmount);
+        Assert.Equal(manualIssue["주사"], injection.IssueQty);
+        Assert.Equal(manualPurchase["주사"].Receipt, injection.ReceiptQty);
+        Assert.Equal(manualPurchase["주사"].Purchase, injection.PurchaseAmount);
+    }
+
+    [Fact]
+    public void Purchase_amount_uses_receive_unit_price_not_reference_price()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var expiry = new DateTime(2027, 1, 1);
+        svc.CreateItem("P001", "고가품", "시술재료", "개", "개", 35_000);
+        svc.SaveOpeningDraft("P001", "OPEN", 50, new DateTime(2026, 1, 1), expiry);
+        svc.ConfirmOpening("P001");
+        svc.Receive(new DateTime(2026, 8, 3), null, "R1",
+            [new ReceiptLineRequest { ItemCode = "P001", Quantity = 2, UnitPrice = 28_500, LotNumber = "L1", ExpiryDate = expiry }]);
+
+        var row = ReportAnalytics.Query(db, ReportPeriodKind.Month, new DateTime(2026, 8, 15), ReportDimension.Category).Single();
+        Assert.Equal(MoneyFormulas.LineAmount(2m, 28_500m), row.PurchaseAmount);
+        Assert.NotEqual(MoneyFormulas.LineAmount(2m, 35_000m), row.PurchaseAmount);
+    }
+
+    [Fact]
+    public void Cancelled_documents_excluded_from_category_aggregate()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var expiry = new DateTime(2027, 1, 1);
+        svc.CreateItem("C001", "거즈", "드레싱", "개", "개", 80);
+        svc.SaveOpeningDraft("C001", "OPEN", 50, new DateTime(2026, 1, 1), expiry);
+        svc.ConfirmOpening("C001");
+        var doc = svc.Receive(new DateTime(2026, 8, 2), null, "R1",
+            [new ReceiptLineRequest { ItemCode = "C001", Quantity = 7, UnitPrice = 90, LotNumber = "L1", ExpiryDate = expiry }]);
+        svc.CancelDocument(doc.Id, "오입력");
+
+        var rows = ReportAnalytics.Query(db, ReportPeriodKind.Month, new DateTime(2026, 8, 15), ReportDimension.Category);
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public void Adjustment_and_opening_lines_do_not_affect_aggregate()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var expiry = new DateTime(2027, 1, 1);
+        svc.CreateItem("X001", "멸균장갑", "소독", "개", "개", 350);
+        svc.SaveOpeningDraft("X001", "OPEN", 40, new DateTime(2026, 8, 1), expiry);
+        svc.ConfirmOpening("X001");
+        svc.Adjust(new DateTime(2026, 8, 5), "X001", "OPEN", 3, AdjustmentType.CountUp, "실사");
+
+        var rows = ReportAnalytics.Query(db, ReportPeriodKind.Month, new DateTime(2026, 8, 15), ReportDimension.Category);
+        Assert.Empty(rows);
     }
 
     [Fact]

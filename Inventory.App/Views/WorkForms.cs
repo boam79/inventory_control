@@ -1088,7 +1088,7 @@ public sealed class StatsView : WorkspaceView
                 current = ReportAnalytics.QuerySupplierMonthlyPurchases(db, baseAnchor, 6);
                 summary.Text = current.Count == 0
                     ? "해당 기간 거래처별 구매 내역이 없습니다."
-                    : $"총 {current.Count:N0}건 · 구매 {current.Sum(r => r.ReceiptQty):N3} · 금액 {current.Sum(r => r.PurchaseAmount):N0}원";
+                    : $"총 {current.Count:N0}건 · 구매 {MoneyFormulas.FormatQty(current.Sum(r => r.ReceiptQty))} · 금액 {MoneyFormulas.FormatWon(current.Sum(r => r.PurchaseAmount))}";
                 chartHost.Children.Clear();
                 var supplierDisplay = current
                     .OrderBy(r => r.PeriodLabel, StringComparer.Ordinal)
@@ -1097,8 +1097,8 @@ public sealed class StatsView : WorkspaceView
                     {
                         월 = r.PeriodLabel,
                         거래처 = r.Dimension,
-                        구매수량 = r.ReceiptQty.ToString("N3"),
-                        구매금액 = r.PurchaseAmount.ToString("N0") + "원"
+                        구매수량 = MoneyFormulas.FormatQty(r.ReceiptQty),
+                        구매금액 = MoneyFormulas.FormatWon(r.PurchaseAmount)
                     }).ToList();
                 gridHost.Children.Clear();
                 if (supplierDisplay.Count == 0)
@@ -1140,7 +1140,7 @@ public sealed class StatsView : WorkspaceView
                 db, period, baseAnchor, dim, periodsBack, customStart.SelectedDate, customEnd.SelectedDate);
             summary.Text = current.Count == 0
                 ? "해당 기간 집계가 없습니다."
-                : $"총 {current.Count:N0}건 · 사용 {current.Sum(r => r.IssueQty):N3} · 입고 {current.Sum(r => r.ReceiptQty):N3} · 구매 {current.Sum(r => r.PurchaseAmount):N0}원";
+                : $"총 {current.Count:N0}건 · 사용 {MoneyFormulas.FormatQty(current.Sum(r => r.IssueQty))} · 입고 {MoneyFormulas.FormatQty(current.Sum(r => r.ReceiptQty))} · 구매 {MoneyFormulas.FormatWon(current.Sum(r => r.PurchaseAmount))}";
 
             chartHost.Children.Clear();
             var periodTotals = current
@@ -1192,9 +1192,9 @@ public sealed class StatsView : WorkspaceView
                 {
                     기간 = r.PeriodLabel,
                     구분 = r.Dimension,
-                    사용 = r.IssueQty.ToString("N3"),
-                    입고 = r.ReceiptQty.ToString("N3"),
-                    구매금액 = r.PurchaseAmount.ToString("N0") + "원"
+                    사용 = MoneyFormulas.FormatQty(r.IssueQty),
+                    입고 = MoneyFormulas.FormatQty(r.ReceiptQty),
+                    구매금액 = MoneyFormulas.FormatWon(r.PurchaseAmount)
                 }).ToList();
             gridHost.Children.Clear();
             if (display.Count == 0)
