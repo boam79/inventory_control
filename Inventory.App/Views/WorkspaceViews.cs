@@ -1110,6 +1110,53 @@ public sealed class SettingsView : WorkspaceView
         };
         panel.Children.Add(devExpander);
 
+        var resetMode = DataResetMode.Empty;
+        var resetBody = new StackPanel();
+        resetBody.Children.Add(Note(
+            "품목·입고·출고·재고·월마감 데이터가 모두 삭제됩니다. 사용자 계정과 환경설정은 유지됩니다. 되돌릴 수 없으니 먼저 「백업」 메뉴에서 백업하세요."));
+        var resetEmpty = new RadioButton
+        {
+            Content = "완전 초기화 — 빈 DB(스키마 유지)",
+            IsChecked = true,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        var resetSample = new RadioButton
+        {
+            Content = $"샘플 데이터로 재설정 — 품목 {DemoSeedService.DefaultItemCount:N0}개·1년치 거래(데모·교육용)"
+        };
+        resetEmpty.Checked += (_, _) => resetMode = DataResetMode.Empty;
+        resetSample.Checked += (_, _) => resetMode = DataResetMode.SampleSeed;
+        resetBody.Children.Add(resetEmpty);
+        resetBody.Children.Add(resetSample);
+        if (AppSession.Current?.Role == UserRole.Administrator)
+        {
+            resetBody.Children.Add(Danger("데이터 초기화…", (_, _) =>
+            {
+                if (Window.GetWindow(this) is not Window owner)
+                {
+                    return;
+                }
+
+                var dlg = new DataResetConfirmDialog(owner, resetMode);
+                if (dlg.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var mode = dlg.SelectedMode;
+                SetBanner(pageBanner, AppHost.Run((inner, _) =>
+                    DataResetService.Reset(inner, mode, DateTime.Today, AppHost.Actor).Message));
+                if (Window.GetWindow(this) is MainWindow main)
+                {
+                    main.ShowDashboard();
+                }
+            }));
+        }
+        else
+        {
+            resetBody.Children.Add(Note("데이터 초기화는 관리자만 실행할 수 있습니다."));
+        }
+
         panel.Children.Add(Note("업데이트는 상단의 「업데이트」 또는 아래 버튼입니다. 설치본에서만 자동 적용됩니다. 개발 실행(dotnet run)에서는 Setup.exe를 받아 설치하세요."));
         var progressBar = new ProgressBar
         {
@@ -1162,6 +1209,8 @@ public sealed class SettingsView : WorkspaceView
         });
         panel.Children.Add(updateBtn);
         panel.Children.Add(progressBar);
-        Content = PageRoot(pageBanner, Section("환경설정", panel));
+        Content = PageRoot(pageBanner,
+            Section("환경설정", panel),
+            Section("데이터 초기화", resetBody));
     }
 }
