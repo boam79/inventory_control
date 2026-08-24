@@ -65,6 +65,45 @@ public sealed class InventoryServiceTests : IDisposable
     }
 
     [Fact]
+    public void Find_or_create_item_by_name_creates_simple_item_and_reuses_exact_match()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+
+        var created = svc.FindOrCreateItemByName("eqw");
+        Assert.Equal("eqw", created.Name);
+        Assert.Equal("N0001", created.Code);
+        Assert.False(created.LotTracked);
+        Assert.False(created.ExpiryTracked);
+        Assert.Equal(OpeningStatus.Confirmed, created.OpeningStatus);
+
+        var again = svc.FindOrCreateItemByName("EQW");
+        Assert.Equal(created.Id, again.Id);
+        Assert.Equal(1, db.Items.Count());
+
+        var byCode = svc.FindOrCreateItemByName("N0001");
+        Assert.Equal(created.Id, byCode.Id);
+
+        var second = svc.FindOrCreateItemByName("새품목");
+        Assert.Equal("N0002", second.Code);
+
+        var doc = svc.Receive(DateTime.Today, null, null,
+        [
+            new ReceiptLineRequest { ItemCode = created.Code, Quantity = 312, UnitPrice = 1 }
+        ]);
+        Assert.False(doc.IsCancelled);
+        Assert.Equal(312m, svc.GetOnHand(created.Code));
+    }
+
+    [Fact]
+    public void Find_or_create_item_by_name_rejects_blank()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        Assert.Throws<InvalidOperationException>(() => svc.FindOrCreateItemByName("  "));
+    }
+
+    [Fact]
     public void Receipt_freezes_unit_price_and_increases_lot()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);

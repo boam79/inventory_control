@@ -20,6 +20,7 @@ public sealed class ItemSearchBox
     private readonly ListBox _list;
     private readonly TextBox _input;
     private bool _suppressTextChanged;
+    private bool _suppressListSelection;
 
     public ItemSearchBox(Func<string, IReadOnlyList<Suggestion>> search, double width = 220)
     {
@@ -69,6 +70,11 @@ public sealed class ItemSearchBox
         };
         _list.SelectionChanged += (_, _) =>
         {
+            if (_suppressListSelection)
+            {
+                return;
+            }
+
             if (_list.SelectedItem is Suggestion picked)
             {
                 ApplySuggestion(picked);
@@ -86,7 +92,37 @@ public sealed class ItemSearchBox
 
     public TextBox Input => _input;
     public string SelectedCode { get; private set; }
+    public string TypedText => _input.Text.Trim();
     public event Action<Suggestion?>? SelectionChanged;
+
+    /// <summary>검색 결과에서 코드/이름 정확 일치를 우선하고, 없으면 첫 항목.</summary>
+    public static Suggestion? PreferExactMatch(IReadOnlyList<Suggestion> hits, string query)
+    {
+        if (hits.Count == 0)
+        {
+            return null;
+        }
+
+        var q = (query ?? string.Empty).Trim();
+        if (q.Length == 0)
+        {
+            return hits[0];
+        }
+
+        var exactCode = hits.FirstOrDefault(s => s.Code.Equals(q, StringComparison.OrdinalIgnoreCase));
+        if (exactCode is not null)
+        {
+            return exactCode;
+        }
+
+        var exactName = hits.FirstOrDefault(s => s.Name.Equals(q, StringComparison.OrdinalIgnoreCase));
+        if (exactName is not null)
+        {
+            return exactName;
+        }
+
+        return hits[0];
+    }
 
     private void ShowSuggestions()
     {
@@ -104,8 +140,10 @@ public sealed class ItemSearchBox
             return;
         }
 
+        _suppressListSelection = true;
         _list.ItemsSource = hits;
         _list.SelectedIndex = 0;
+        _suppressListSelection = false;
         _popup.IsOpen = true;
     }
 
@@ -162,7 +200,7 @@ public sealed class ItemSearchBox
             return;
         }
 
-        var hit = _search(q).FirstOrDefault();
+        var hit = PreferExactMatch(_search(q).ToList(), q);
         if (hit is null)
         {
             SelectedCode = "";

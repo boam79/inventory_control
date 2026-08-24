@@ -496,10 +496,43 @@ public sealed class ReceiveIssueView : WorkspaceView
         var add = Primary("품목 추가", (_, _) =>
         {
             ItemSearchBox search = currentMode == VoucherMode.Receive ? receiveItemSearch : issueItemSearch;
+            var typed = search.TypedText;
             if (!search.TryGetSelection(out var picked) || picked is null)
             {
-                SetBanner(pageBanner, "품목을 선택 또는 입력하세요.", isError: true);
-                return;
+                if (typed.Length == 0)
+                {
+                    SetBanner(pageBanner, "품목을 선택 또는 입력하세요.", isError: true);
+                    return;
+                }
+
+                if (currentMode != VoucherMode.Receive)
+                {
+                    SetBanner(pageBanner, "목록에서 품목을 고르세요.", isError: true);
+                    return;
+                }
+
+                var confirm = MessageBox.Show(
+                    $"'{typed}' 품목이 목록에 없습니다.\n새 품목으로 등록하고 추가할까요?",
+                    ProductInfo.DisplayName,
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (confirm != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+
+                try
+                {
+                    using var db = AppHost.OpenDb();
+                    var created = new InventoryService(db, AppHost.Actor).FindOrCreateItemByName(typed);
+                    picked = UiComponents.ItemSuggestion(created, onHand: 0);
+                    search.SetSelection(picked.Code, picked.Name, picked.StockLabel);
+                }
+                catch (Exception ex)
+                {
+                    SetBanner(pageBanner, $"원인: {AppLog.Sanitize(ex.Message)}", isError: true);
+                    return;
+                }
             }
 
             if (!decimal.TryParse(qty.Text, CultureInfo.CurrentCulture, out var qv) || qv <= 0)

@@ -50,6 +50,57 @@ public sealed class InventoryService
         return item;
     }
 
+    /// <summary>
+    /// 입고 화면에서 자유 입력한 품목명을 코드/이름 정확 일치로 찾거나, 없으면 간단 품목으로 등록한다.
+    /// LOT·유효기간 비관리·기초재고 Confirmed로 만들어 바로 입고·재고 반영이 되게 한다.
+    /// </summary>
+    public Item FindOrCreateItemByName(string nameOrCode)
+    {
+        var q = (nameOrCode ?? string.Empty).Trim();
+        if (q.Length == 0)
+        {
+            throw new InvalidOperationException("품목명은 필수입니다.");
+        }
+
+        var byCode = _db.Items.FirstOrDefault(i => i.Code == q);
+        if (byCode is not null)
+        {
+            return byCode;
+        }
+
+        var byName = _db.Items.AsEnumerable()
+            .FirstOrDefault(i => i.IsActive && string.Equals(i.Name, q, StringComparison.OrdinalIgnoreCase));
+        if (byName is not null)
+        {
+            return byName;
+        }
+
+        var code = NextGeneratedItemCode();
+        var item = CreateItem(code, q, "기타", "개", "개", 0m, lotTracked: false, expiryTracked: false);
+        item.OpeningStatus = OpeningStatus.Confirmed;
+        _db.SaveChanges();
+        return item;
+    }
+
+    private string NextGeneratedItemCode()
+    {
+        const string prefix = "N";
+        var used = _db.Items.AsNoTracking()
+            .Where(i => i.Code.StartsWith(prefix))
+            .Select(i => i.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        for (var n = 1; n < 100_000; n++)
+        {
+            var code = $"{prefix}{n:D4}";
+            if (!used.Contains(code))
+            {
+                return code;
+            }
+        }
+
+        return prefix + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+    }
+
     public void RenameItem(string code, string newName)
     {
         var item = RequireItem(code);

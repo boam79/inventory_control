@@ -350,6 +350,23 @@ public class ShellLayoutTests
     }
 
     [Fact]
+    public void Receive_issue_add_creates_new_item_from_free_text_on_receive()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var ui = ReadRepoFile("Inventory.App", "Views", "UiComponents.cs");
+        var viewStart = forms.IndexOf("public sealed class ReceiveIssueView", StringComparison.Ordinal);
+        var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
+        Assert.True(viewStart >= 0 && stockStart > viewStart);
+        var view = forms[viewStart..stockStart];
+        Assert.Contains("FindOrCreateItemByName", view, StringComparison.Ordinal);
+        Assert.Contains("새 품목으로 등록하고 추가할까요?", view, StringComparison.Ordinal);
+        Assert.Contains("목록에서 품목을 고르세요.", view, StringComparison.Ordinal);
+        Assert.Contains("search.TypedText", view, StringComparison.Ordinal);
+        Assert.Contains("PreferExactMatch", ui, StringComparison.Ordinal);
+        Assert.Contains("_suppressListSelection", ui, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void App_starts_on_main_window_without_login_or_logout()
     {
         var appXaml = ReadRepoFile("Inventory.App", "App.xaml");
