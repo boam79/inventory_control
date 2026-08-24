@@ -514,6 +514,7 @@ public sealed class InventoryService
                 d.DocumentNo,
                 d.IsCancelled,
                 LineCount = d.Lines.Count,
+                TotalQuantity = d.Lines.Sum(l => l.Quantity),
                 TotalAmount = d.Lines.Sum(l => l.Amount),
                 FirstItemId = d.Lines.OrderBy(l => l.Id).Select(l => (int?)l.ItemId).FirstOrDefault(),
                 FirstUnitPrice = d.Lines.OrderBy(l => l.Id).Select(l => (decimal?)l.UnitPrice).FirstOrDefault()
@@ -533,6 +534,7 @@ public sealed class InventoryService
                 s.IsCancelled,
                 s.LineCount,
                 s.FirstItemId.HasValue && names.TryGetValue(s.FirstItemId.Value, out var name) ? name : null,
+                s.TotalQuantity,
                 s.TotalAmount,
                 s.LineCount == 1 ? s.FirstUnitPrice : null))
             .ToList();

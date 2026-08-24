@@ -179,6 +179,7 @@ public sealed record DocumentSummary(
     bool IsCancelled,
     int LineCount,
     string? FirstItemName = null,
+    decimal TotalQuantity = 0,
     decimal TotalAmount = 0,
     decimal? UnitPrice = null);
 

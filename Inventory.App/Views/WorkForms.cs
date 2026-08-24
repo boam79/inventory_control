@@ -39,7 +39,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         public required string 일자 { get; init; }
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
-        public required int 품목수 { get; init; }
+        public required string 수량 { get; init; }
         public required string 단가 { get; init; }
         public required string 총금액 { get; init; }
         public required string 상태 { get; init; }
@@ -251,7 +251,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 일자 = d.DocumentDate.ToString("yyyy-MM-dd"),
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
-                품목수 = d.LineCount,
+                수량 = d.LineCount > 1 ? $"{d.LineCount}품목" : MoneyFormulas.FormatQty(d.TotalQuantity),
                 단가 = d.UnitPrice is { } p ? MoneyFormulas.FormatWon(p) : "—",
                 총금액 = MoneyFormulas.FormatWon(d.TotalAmount),
                 상태 = d.IsCancelled ? "삭제됨" : "저장",
@@ -292,7 +292,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 new ColumnSpec("일자", "일자"),
                 new ColumnSpec("전표", "전표"),
                 new ColumnSpec("품목", "품목"),
-                new ColumnSpec("품목수", "품목수", ColumnAlign.Right),
+                new ColumnSpec("수량", "수량", ColumnAlign.Right),
                 new ColumnSpec("단가", "단가", ColumnAlign.Right),
                 new ColumnSpec("총금액", "총금액", ColumnAlign.Right),
                 new ColumnSpec("상태", "상태", Width: 72));

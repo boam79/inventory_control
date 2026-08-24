@@ -179,8 +179,10 @@ public sealed class InventoryServiceTests : IDisposable
         var summary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
         Assert.Equal("주사기", summary.FirstItemName);
         Assert.True(summary.IsCancelled);
+        Assert.Equal(4m, summary.TotalQuantity);
         Assert.Equal(40m, summary.TotalAmount);
         Assert.Equal(10m, summary.UnitPrice);
+        Assert.Equal(MoneyFormulas.LineAmount(summary.TotalQuantity, summary.UnitPrice!.Value), summary.TotalAmount);
     }
 
     [Fact]
@@ -205,8 +207,10 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Equal(2m, detail.Lines[0].Quantity);
 
         var summary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
+        Assert.Equal(2m, summary.TotalQuantity);
         Assert.Equal(200m, summary.TotalAmount);
         Assert.Equal(100m, summary.UnitPrice);
+        Assert.Equal(MoneyFormulas.LineAmount(summary.TotalQuantity, summary.UnitPrice!.Value), summary.TotalAmount);
 
         svc.DeleteDocument(receipt.Id);
         Assert.True(db.Documents.Single(d => d.Id == receipt.Id).IsCancelled);
@@ -332,16 +336,44 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Equal(MoneyFormulas.LineAmount(1, 80), receipt.Lines.Single().Amount);
 
         var receiveSummary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
+        Assert.Equal(1m, receiveSummary.TotalQuantity);
         Assert.Equal(80m, receiveSummary.TotalAmount);
         Assert.Equal(80m, receiveSummary.UnitPrice);
+        Assert.Equal(MoneyFormulas.LineAmount(receiveSummary.TotalQuantity, receiveSummary.UnitPrice!.Value), receiveSummary.TotalAmount);
 
         var issue = svc.Issue(DateTime.Today, null, [new IssueLineRequest { ItemCode = "M021", Quantity = 2, LotNumber = "OPEN" }]);
         var unit = issue.Lines.Single().UnitPrice;
         Assert.Equal(MoneyFormulas.LineAmount(2, unit), issue.Lines.Single().Amount);
 
         var issueSummary = svc.ListDocumentSummaries(10).Single(d => d.Id == issue.Id);
+        Assert.Equal(2m, issueSummary.TotalQuantity);
         Assert.Equal(issue.Lines.Single().Amount, issueSummary.TotalAmount);
         Assert.Equal(unit, issueSummary.UnitPrice);
+        Assert.Equal(MoneyFormulas.LineAmount(issueSummary.TotalQuantity, issueSummary.UnitPrice!.Value), issueSummary.TotalAmount);
+    }
+
+    [Fact]
+    public void ListDocumentSummaries_multi_line_shows_total_quantity_without_unit_price()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.CreateItem("M002", "거즈", "드레싱", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN1", 10, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(90));
+        svc.SaveOpeningDraft("M002", "OPEN2", 10, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(90));
+        svc.ConfirmOpening("M001");
+        svc.ConfirmOpening("M002");
+        var receipt = svc.Receive(DateTime.Today, null, "MULTI",
+        [
+            new ReceiptLineRequest { ItemCode = "M001", Quantity = 3, UnitPrice = 100, LotNumber = "A", ExpiryDate = DateTime.Today.AddDays(30) },
+            new ReceiptLineRequest { ItemCode = "M002", Quantity = 2, UnitPrice = 50, LotNumber = "B", ExpiryDate = DateTime.Today.AddDays(30) }
+        ]);
+
+        var summary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
+        Assert.Equal(2, summary.LineCount);
+        Assert.Equal(5m, summary.TotalQuantity);
+        Assert.Equal(400m, summary.TotalAmount);
+        Assert.Null(summary.UnitPrice);
     }
 
     public void Dispose()
