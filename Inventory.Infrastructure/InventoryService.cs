@@ -510,7 +510,10 @@ public sealed class InventoryService
                 d.IsCancelled,
                 LineCount = d.Lines.Count,
                 TotalAmount = d.Lines.Sum(l => l.Amount),
-                FirstItemId = d.Lines.OrderBy(l => l.Id).Select(l => (int?)l.ItemId).FirstOrDefault()
+                FirstItemId = d.Lines.OrderBy(l => l.Id).Select(l => (int?)l.ItemId).FirstOrDefault(),
+                FirstUnitPrice = d.Type == DocumentType.Receipt
+                    ? d.Lines.OrderBy(l => l.Id).Select(l => (decimal?)l.UnitPrice).FirstOrDefault()
+                    : null
             })
             .ToList();
 
@@ -527,7 +530,8 @@ public sealed class InventoryService
                 s.IsCancelled,
                 s.LineCount,
                 s.FirstItemId.HasValue && names.TryGetValue(s.FirstItemId.Value, out var name) ? name : null,
-                s.TotalAmount))
+                s.TotalAmount,
+                s.FirstUnitPrice))
             .ToList();
     }
 

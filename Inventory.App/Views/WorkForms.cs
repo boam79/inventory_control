@@ -29,6 +29,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         public required decimal 수량 { get; init; }
         public decimal? 단가 { get; init; }
         public string? LOT { get; init; }
+        public string 단가표시 => 단가 is { } p ? $"{p:N0}원" : "—";
         public string 총금액 => 단가 is { } p ? $"{(수량 * p):N0}원" : "—";
     }
 
@@ -39,6 +40,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
         public required int 품목수 { get; init; }
+        public required string 단가 { get; init; }
         public required string 총금액 { get; init; }
         public required string 상태 { get; init; }
         public required DocumentType DocType { get; init; }
@@ -231,6 +233,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
                 품목수 = d.LineCount,
+                단가 = d.UnitPrice is { } p ? $"{p:N0}원" : "—",
                 총금액 = $"{d.TotalAmount:N0}원",
                 상태 = d.IsCancelled ? "삭제됨" : "저장",
                 DocType = d.Type,
@@ -271,6 +274,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 new ColumnSpec("전표", "전표"),
                 new ColumnSpec("품목", "품목"),
                 new ColumnSpec("품목수", "품목수", ColumnAlign.Right),
+                new ColumnSpec("단가", "단가", ColumnAlign.Right),
                 new ColumnSpec("총금액", "총금액", ColumnAlign.Right),
                 new ColumnSpec("상태", "상태", Width: 72));
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as RecentDocRow;
@@ -454,7 +458,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                     new ColumnSpec("품목", nameof(CartLine.품목)),
                     new ColumnSpec("코드", nameof(CartLine.코드)),
                     new ColumnSpec("수량", nameof(CartLine.수량), ColumnAlign.Right),
-                    new ColumnSpec("단가", nameof(CartLine.단가), ColumnAlign.Right),
+                    new ColumnSpec("단가", nameof(CartLine.단가표시), ColumnAlign.Right),
                     new ColumnSpec("총금액", nameof(CartLine.총금액), ColumnAlign.Right)));
             }
             else
@@ -1002,7 +1006,8 @@ public sealed class StatsView : WorkspaceView
         };
         var kind = new ComboBox { ItemsSource = new[] { "일", "월", "분기", "년", "기간지정" }, SelectedIndex = 1, Width = 140 };
         var dimension = new ComboBox { ItemsSource = new[] { "품목", "분류", "부서", "공급업체" }, SelectedIndex = 1, Width = 140 };
-        var anchor = Date(DateTime.Today);
+        var anchorDate = Date(DateTime.Today);
+        var anchorMonth = Date(DateTime.Today);
         var customStart = Date(DateTime.Today.AddMonths(-1));
         var customEnd = Date(DateTime.Today);
         var customRow = new WrapPanel { Visibility = Visibility.Collapsed };
@@ -1015,11 +1020,11 @@ public sealed class StatsView : WorkspaceView
             Margin = new Thickness(0, 8, 0, 0)
         };
         var aggregateFilters = new StackPanel();
-        aggregateFilters.Children.Add(FormRow(Field("기간", kind), Field("기준일", anchor), Field("집계", dimension)));
+        aggregateFilters.Children.Add(FormRow(Field("기간", kind), Field("기준일", anchorDate), Field("집계", dimension)));
         aggregateFilters.Children.Add(customRow);
         aggregateFilters.Children.Add(trend);
         var supplierFilters = new StackPanel { Visibility = Visibility.Collapsed };
-        supplierFilters.Children.Add(FormRow(Field("기준월", anchor)));
+        supplierFilters.Children.Add(FormRow(Field("기준월", anchorMonth)));
         supplierFilters.Children.Add(new TextBlock
         {
             Text = "최근 6개월 동안 거래처별 입고 수량·구매 금액을 표시합니다.",
@@ -1048,7 +1053,7 @@ public sealed class StatsView : WorkspaceView
         {
             ApplyReportKindUi();
             using var db = AppHost.OpenDb();
-            var baseAnchor = anchor.SelectedDate ?? DateTime.Today;
+            var baseAnchor = (isSupplierMonthly ? anchorMonth : anchorDate).SelectedDate ?? DateTime.Today;
             if (isSupplierMonthly)
             {
                 current = ReportAnalytics.QuerySupplierMonthlyPurchases(db, baseAnchor, 6);
@@ -1191,7 +1196,8 @@ public sealed class StatsView : WorkspaceView
             Reload();
         };
         dimension.SelectionChanged += (_, _) => Reload();
-        anchor.SelectedDateChanged += (_, _) => Reload();
+        anchorDate.SelectedDateChanged += (_, _) => Reload();
+        anchorMonth.SelectedDateChanged += (_, _) => Reload();
         customStart.SelectedDateChanged += (_, _) => Reload();
         customEnd.SelectedDateChanged += (_, _) => Reload();
         trend.Checked += (_, _) => Reload();

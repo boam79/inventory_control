@@ -259,8 +259,11 @@ public class ShellLayoutTests
         Assert.Contains("Field(\"총금액\", lineTotal)", view, StringComparison.Ordinal);
         Assert.Contains("UpdateLineTotal()", view, StringComparison.Ordinal);
         Assert.Contains("nameof(CartLine.총금액)", view, StringComparison.Ordinal);
-        Assert.Contains("ColumnSpec(\"총금액\", \"총금액\"", view, StringComparison.Ordinal);
+        Assert.Contains("nameof(CartLine.단가표시)", view, StringComparison.Ordinal);
+        Assert.Contains("ColumnSpec(\"단가\", \"단가\"", view, StringComparison.Ordinal);
+        Assert.Contains("ColumnSpec(\"단가\", nameof(CartLine.단가표시)", view, StringComparison.Ordinal);
         Assert.Contains("TotalAmount", view, StringComparison.Ordinal);
+        Assert.Contains("UnitPrice", view, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -305,13 +308,29 @@ public class ShellLayoutTests
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         Assert.Contains("dimension.SelectionChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
-        Assert.Contains("anchor.SelectedDateChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
+        Assert.Contains("anchorDate.SelectedDateChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
+        Assert.Contains("anchorMonth.SelectedDateChanged += (_, _) => Reload();", forms, StringComparison.Ordinal);
         Assert.Contains("최근 6기간 추이로 보기", forms, StringComparison.Ordinal);
         Assert.Contains("ColumnSeries<double>", forms, StringComparison.Ordinal);
         Assert.Contains("(\"기간\", \"기간\")", forms, StringComparison.Ordinal);
 
         var analytics = ReadRepoFile("Inventory.Infrastructure", "ReportAnalytics.cs");
         Assert.Contains("public static DateTime StepBack(", analytics, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Stats_view_uses_separate_date_pickers_for_aggregate_and_supplier_reports()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var viewStart = forms.IndexOf("public sealed class StatsView", StringComparison.Ordinal);
+        var usersStart = forms.IndexOf("public sealed class UsersView", StringComparison.Ordinal);
+        Assert.True(viewStart >= 0 && usersStart > viewStart);
+        var view = forms[viewStart..usersStart];
+        Assert.Contains("var anchorDate = Date(DateTime.Today);", view, StringComparison.Ordinal);
+        Assert.Contains("var anchorMonth = Date(DateTime.Today);", view, StringComparison.Ordinal);
+        Assert.Contains("Field(\"기준일\", anchorDate)", view, StringComparison.Ordinal);
+        Assert.Contains("Field(\"기준월\", anchorMonth)", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("Field(\"기준월\", anchorDate)", view, StringComparison.Ordinal);
     }
 
     [Fact]
