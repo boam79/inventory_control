@@ -1216,7 +1216,8 @@ public sealed class SettingsView : WorkspaceView
         var notifyBody = new StackPanel();
         notifyBody.Children.Add(Note(
             "앱 시작 시 하루 1회, 개발자 메일로 설치·사용 알림만 보냅니다. 재고·거래 데이터는 포함하지 않습니다. " +
-            "한메일(다음) SMTP는 앱 비밀번호가 필요합니다. 미설정이면 발송만 건너뛰고 업무는 계속됩니다."));
+            "SMTP From·앱 비밀번호는 프로그램에 기본 내장되어 있어 의원 PC에서 따로 입력하지 않아도 됩니다. " +
+            "아래에서 덮어쓸 수 있고, 비밀번호를 비워 두면 내장 기본값을 씁니다."));
         var notifyEnabled = new CheckBox
         {
             Content = "사용 알림 보내기",
@@ -1229,7 +1230,9 @@ public sealed class SettingsView : WorkspaceView
         installIdBox.Width = 320;
         installIdBox.MaxWidth = 480;
         notifyBody.Children.Add(Field("설치 ID (읽기 전용)", installIdBox));
-        var smtpFrom = Box(notifyOpts.FromAddress);
+        var smtpFrom = Box(string.IsNullOrWhiteSpace(notifyOpts.FromAddress)
+            ? UsageNotifyDefaults.DefaultFromAddress
+            : notifyOpts.FromAddress);
         smtpFrom.Width = 280;
         smtpFrom.MaxWidth = 400;
         notifyBody.Children.Add(Field("SMTP 발신(From)", smtpFrom));
@@ -1244,11 +1247,15 @@ public sealed class SettingsView : WorkspaceView
         notifyBody.Children.Add(Field("SMTP 호스트", smtpHost));
         notifyBody.Children.Add(Field("SMTP 포트", smtpPort));
         var smtpPassword = new PasswordBox { Width = 220, MinWidth = 160 };
+        var hasCustomPassword = !string.IsNullOrWhiteSpace(notifyOpts.PasswordProtected)
+            || !string.IsNullOrWhiteSpace(notifyOpts.Password);
         notifyBody.Children.Add(Field(
-            notifyOpts.IsSmtpConfigured() ? "SMTP 앱 비밀번호 (변경 시에만 입력)" : "SMTP 앱 비밀번호",
+            hasCustomPassword
+                ? "SMTP 앱 비밀번호 (변경 시에만 입력 · 비우면 저장된 값 유지)"
+                : "SMTP 앱 비밀번호 (비우면 내장 기본값 사용)",
             smtpPassword));
         notifyBody.Children.Add(Note(
-            $"수신: {UsageNotifyOptions.DefaultToAddress} · 설정 파일: {UsageNotifyConfigStore.ConfigPath(appDataRoot)}"));
+            $"수신: {UsageNotifyOptions.DefaultToAddress} · 내장 기본 From: {UsageNotifyDefaults.DefaultFromAddress} · 설정 파일: {UsageNotifyConfigStore.ConfigPath(appDataRoot)}"));
         notifyBody.Children.Add(Primary("사용 알림 설정 저장", (_, _) =>
         {
             if (!int.TryParse(smtpPort.Text.Trim(), out var port) || port <= 0)
@@ -1256,6 +1263,7 @@ public sealed class SettingsView : WorkspaceView
                 port = UsageNotifyOptions.DefaultSmtpPort;
             }
 
+            var fromText = smtpFrom.Text.Trim();
             var next = new UsageNotifyOptions
             {
                 Enabled = notifyEnabled.IsChecked == true,
@@ -1264,7 +1272,9 @@ public sealed class SettingsView : WorkspaceView
                     ? UsageNotifyOptions.DefaultSmtpHost
                     : smtpHost.Text.Trim(),
                 SmtpPort = port,
-                FromAddress = smtpFrom.Text.Trim(),
+                FromAddress = string.IsNullOrWhiteSpace(fromText)
+                    ? UsageNotifyDefaults.DefaultFromAddress
+                    : fromText,
                 PasswordProtected = notifyOpts.PasswordProtected,
                 Password = notifyOpts.Password
             };

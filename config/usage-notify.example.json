@@ -4,6 +4,6 @@
   "SmtpHost": "smtp.daum.net",
   "SmtpPort": 465,
   "FromAddress": "pjm7908@hanmail.net",
-  "Password": "여기에_한메일_앱_비밀번호",
+  "Password": null,
   "PasswordProtected": null
 }

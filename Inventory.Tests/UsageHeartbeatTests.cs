@@ -92,6 +92,64 @@ public sealed class UsageHeartbeatTests
     }
 
     [Fact]
+    public void LoadOrDefault_empty_config_uses_built_in_smtp_for_send_path()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            Assert.False(File.Exists(UsageNotifyConfigStore.ConfigPath(root)));
+
+            var loaded = UsageNotifyConfigStore.LoadOrDefault(root);
+            Assert.True(loaded.Enabled);
+            Assert.Equal(UsageNotifyDefaults.DefaultFromAddress, loaded.FromAddress);
+            Assert.Equal(UsageNotifyOptions.DefaultSmtpHost, loaded.SmtpHost);
+            Assert.Equal(UsageNotifyOptions.DefaultSmtpPort, loaded.SmtpPort);
+            Assert.True(loaded.IsSmtpConfigured());
+            Assert.Equal(UsageNotifyDefaults.GetBuiltInPassword(), loaded.ResolvePassword());
+
+            var sender = new RecordingMailSender();
+            var today = new DateOnly(2026, 8, 24);
+            var payload = UsageNotifyMessage.Build(Guid.NewGuid(), sentAtLocal: today.ToDateTime(TimeOnly.Parse("09:00")));
+            var result = UsageHeartbeatService.TrySendToday(
+                root,
+                payload,
+                sender,
+                todayLocal: today);
+
+            Assert.Equal(UsageHeartbeatOutcome.Sent, result.Outcome);
+            Assert.Single(sender.Calls);
+            Assert.Equal(UsageNotifyDefaults.GetBuiltInPassword(), sender.Calls[0].ResolvedPassword);
+            Assert.Equal(UsageNotifyDefaults.DefaultFromAddress, sender.Calls[0].FromAddress);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void ResolvePassword_prefers_settings_over_built_in()
+    {
+        var options = new UsageNotifyOptions
+        {
+            FromAddress = UsageNotifyDefaults.DefaultFromAddress,
+            Password = "custom-override-password"
+        };
+        Assert.Equal("custom-override-password", options.ResolvePassword());
+        Assert.NotEqual(UsageNotifyDefaults.GetBuiltInPassword(), options.ResolvePassword());
+    }
+
+    [Fact]
+    public void Built_in_password_is_obfuscated_not_plaintext_in_defaults_source()
+    {
+        var source = File.ReadAllText(
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..",
+                "Inventory.Infrastructure", "UsageNotifyDefaults.cs")));
+        Assert.DoesNotContain(UsageNotifyDefaults.GetBuiltInPassword(), source, StringComparison.Ordinal);
+        Assert.Contains("ObfuscatedPassword", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TrySendToday_sends_once_then_throttles_same_day()
     {
         var root = NewTempRoot();
@@ -144,6 +202,7 @@ public sealed class UsageHeartbeatTests
             Assert.True(loaded.IsSmtpConfigured());
             Assert.Null(loaded.Password);
             Assert.False(string.IsNullOrWhiteSpace(loaded.PasswordProtected));
+            Assert.Equal("secret-app-password", loaded.ResolvePassword());
         }
         finally
         {
@@ -171,9 +230,9 @@ public sealed class UsageHeartbeatTests
 
     private sealed class RecordingMailSender : IUsageMailSender
     {
-        public List<(string Subject, string Body)> Calls { get; } = new();
+        public List<(string Subject, string Body, string? ResolvedPassword, string FromAddress)> Calls { get; } = new();
 
         public void Send(UsageNotifyOptions options, string subject, string body) =>
-            Calls.Add((subject, body));
+            Calls.Add((subject, body, options.ResolvePassword(), options.FromAddress));
     }
 }

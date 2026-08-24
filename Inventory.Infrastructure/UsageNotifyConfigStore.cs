@@ -34,7 +34,7 @@ public static class UsageNotifyConfigStore
         var path = ConfigPath(appDataRoot);
         if (!File.Exists(path))
         {
-            return new UsageNotifyOptions();
+            return CreateBuiltInDefaults();
         }
 
         try
@@ -43,30 +43,24 @@ public static class UsageNotifyConfigStore
             var loaded = JsonSerializer.Deserialize<UsageNotifyOptions>(json, JsonOptions);
             if (loaded is null)
             {
-                return new UsageNotifyOptions();
+                return CreateBuiltInDefaults();
             }
 
-            if (string.IsNullOrWhiteSpace(loaded.ToAddress))
-            {
-                loaded.ToAddress = UsageNotifyOptions.DefaultToAddress;
-            }
-
-            if (string.IsNullOrWhiteSpace(loaded.SmtpHost))
-            {
-                loaded.SmtpHost = UsageNotifyOptions.DefaultSmtpHost;
-            }
-
-            if (loaded.SmtpPort <= 0)
-            {
-                loaded.SmtpPort = UsageNotifyOptions.DefaultSmtpPort;
-            }
-
+            UsageNotifyDefaults.ApplyMissingFields(loaded);
             return loaded;
         }
         catch
         {
-            return new UsageNotifyOptions();
+            return CreateBuiltInDefaults();
         }
+    }
+
+    /// <summary>설정 파일 없을 때: 사용 알림 ON + 내장 From/SMTP/비밀번호.</summary>
+    public static UsageNotifyOptions CreateBuiltInDefaults()
+    {
+        var options = new UsageNotifyOptions { Enabled = true };
+        UsageNotifyDefaults.ApplyMissingFields(options);
+        return options;
     }
 
     public static void Save(string appDataRoot, UsageNotifyOptions options, string? plainPasswordToProtect = null)

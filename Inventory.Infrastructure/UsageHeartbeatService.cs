@@ -17,7 +17,9 @@ public sealed class SmtpUsageMailSender : IUsageMailSender
     {
         var password = options.ResolvePassword()
                        ?? throw new InvalidOperationException("SMTP 비밀번호가 없습니다.");
-        var from = options.FromAddress.Trim();
+        var from = string.IsNullOrWhiteSpace(options.FromAddress)
+            ? UsageNotifyDefaults.DefaultFromAddress
+            : options.FromAddress.Trim();
         var message = new MimeMessage();
         message.From.Add(MailboxAddress.Parse(from));
         message.To.Add(MailboxAddress.Parse(options.ToAddress.Trim()));
@@ -32,7 +34,11 @@ public sealed class SmtpUsageMailSender : IUsageMailSender
         client.Connect(options.SmtpHost.Trim(), options.SmtpPort, secure);
         try
         {
-            client.Authenticate(from, password);
+            // 한메일: 전체 주소 또는 로그인 ID(pjm7908) 모두 가능. 기본 From이면 ID로 인증.
+            var authUser = string.Equals(from, UsageNotifyDefaults.DefaultFromAddress, StringComparison.OrdinalIgnoreCase)
+                ? UsageNotifyDefaults.DefaultSmtpUser
+                : from;
+            client.Authenticate(authUser, password);
             client.Send(message);
         }
         finally
@@ -97,7 +103,7 @@ public static class UsageHeartbeatService
                 if (Interlocked.Exchange(ref _smtpMissingLogged, 1) == 0)
                 {
                     log?.Information(
-                        "사용 알림 SMTP 미설정 — 발송 생략. 설정>사용 알림 또는 usage-notify.json에 From/앱 비밀번호를 넣으세요.");
+                        "사용 알림 SMTP 미설정 — 발송 생략. From이 비어 있거나 내장 비밀번호를 쓸 수 없습니다.");
                 }
 
                 return new UsageHeartbeatResult(
