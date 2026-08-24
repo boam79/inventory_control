@@ -259,6 +259,63 @@ public sealed class OperationsTests : IDisposable
     }
 
     [Fact]
+    public void Excel_stock_list_export_can_filter_by_item_codes()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.CreateItem("M002", "거즈", "소모품", "개", "개", 5);
+        svc.SaveOpeningDraft("M001", "OPEN", 7, DateTime.Today.AddDays(-1), DateTime.Today.AddDays(20));
+        svc.ConfirmOpening("M001");
+        svc.SaveOpeningDraft("M002", "OPEN", 3, DateTime.Today.AddDays(-1), DateTime.Today.AddDays(20));
+        svc.ConfirmOpening("M002");
+        var rows = svc.SearchStockSnapshots("");
+        var filtered = rows.Where(r => string.Equals(r.Code, "M001", StringComparison.OrdinalIgnoreCase)).ToList();
+        var path = Path.Combine(_work, "stock-list-filtered.xlsx");
+        ExcelCatalog.ExportStockList(filtered, path, filtered.Sum(r => r.StockValue ?? 0));
+        using var wb = new XLWorkbook(path);
+        var sheet = wb.Worksheet("재고목록");
+        Assert.Equal("M001", sheet.Cell(2, 1).GetString());
+        Assert.Equal("합계", sheet.Cell(3, 1).GetString());
+        var lastRow = sheet.LastRowUsed();
+        Assert.NotNull(lastRow);
+        Assert.Equal(3, lastRow.RowNumber());
+    }
+
+    [Fact]
+    public void Excel_supplier_monthly_export_can_filter_by_vendor()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 10, DateTime.Today.AddDays(-1), DateTime.Today.AddDays(20));
+        svc.ConfirmOpening("M001");
+        var supA = svc.CreateSupplier("메디칼A");
+        var supB = svc.CreateSupplier("메디칼B");
+        svc.Receive(new DateTime(2026, 8, 2), supA.Id, "R1",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 4, UnitPrice = 50, LotNumber = "A", ExpiryDate = DateTime.Today.AddDays(365) }]);
+        svc.Receive(new DateTime(2026, 8, 3), supB.Id, "R2",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 2, UnitPrice = 60, LotNumber = "B", ExpiryDate = DateTime.Today.AddDays(365) }]);
+        var rows = ReportAnalytics.QuerySupplierMonthlyPurchases(db, new DateTime(2026, 8, 15), 1);
+        var filtered = rows.Where(r => r.Dimension == "메디칼A").ToList();
+        var path = Path.Combine(_work, "supplier-monthly-filtered.xlsx");
+        ExcelCatalog.ExportSupplierMonthlyPurchases(filtered, path);
+        using var wb = new XLWorkbook(path);
+        var sheet = wb.Worksheet("거래처별월별구매");
+        Assert.Equal("메디칼A", sheet.Cell(2, 2).GetString());
+        Assert.Equal(200m, sheet.Cell(2, 4).GetValue<decimal>());
+        Assert.Equal("합계", sheet.Cell(3, 1).GetString());
+        Assert.Equal(200m, sheet.Cell(3, 4).GetValue<decimal>());
+    }
+
+    [Fact]
+    public void Export_filtered_file_name_reflects_selection_count()
+    {
+        Assert.Equal("재고목록.xlsx", ExcelCatalog.BuildExportFileName("재고목록", false, 3));
+        Assert.Equal("재고목록_선택3건.xlsx", ExcelCatalog.BuildExportFileName("재고목록", true, 3));
+    }
+
+    [Fact]
     public void Backup_restore_keeps_item_count_and_on_hand()
     {
         using (var db = InventoryDatabase.CreateContext(_dbPath))

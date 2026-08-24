@@ -774,7 +774,7 @@ public sealed class StockView : WorkspaceView
             totalValueBanner.Text = filteredSnaps.Count == 0
                 ? "총 재고 금액: —"
                 : $"총 재고 금액: {totalValue:N0}원";
-            var next = TableGrid(slice,
+            var next = TableGrid(slice, allowMultiSelect: true,
                 new ColumnSpec("품목", nameof(StockRow.품목)),
                 new ColumnSpec("코드", nameof(StockRow.코드)),
                 new ColumnSpec("현재고", nameof(StockRow.현재고), ColumnAlign.Right),
@@ -887,12 +887,43 @@ public sealed class StockView : WorkspaceView
                 return;
             }
 
-            var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "재고목록.xlsx" };
+            var owner = Window.GetWindow(this) ?? Application.Current?.MainWindow;
+            var gridSelectedCodes = grid?.SelectedItems.OfType<StockRow>().Select(r => r.코드).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [];
+            var choices = filteredSnaps
+                .Select(s => (s.Code, $"{s.Code} · {s.Name}"))
+                .DistinctBy(c => c.Code, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var scopeDlg = new ExcelExportScopeDialog(
+                owner!,
+                "재고 Excel 내보내기",
+                $"현재 필터 결과 전체 ({filteredSnaps.Count:N0}건)",
+                "품목 선택",
+                choices,
+                gridSelectedCodes);
+            if (scopeDlg.ShowDialog() != true)
+            {
+                return;
+            }
+
+            var exportRows = scopeDlg.Scope == ExcelExportScopeDialog.ScopeKind.All
+                ? filteredSnaps
+                : filteredSnaps.Where(s => scopeDlg.SelectedKeys.Contains(s.Code, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (exportRows.Count == 0)
+            {
+                SetBanner(pageBanner, "내보낼 품목이 없습니다.", isError: true);
+                return;
+            }
+
+            var filtered = scopeDlg.Scope == ExcelExportScopeDialog.ScopeKind.Selected;
+            var defaultName = ExcelCatalog.BuildExportFileName("재고목록", filtered, exportRows.Count);
+            var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = defaultName };
             if (dlg.ShowDialog() == true)
             {
-                var total = filteredSnaps.Sum(s => s.StockValue ?? 0);
-                ExcelCatalog.ExportStockList(filteredSnaps, dlg.FileName, total);
-                SetBanner(pageBanner, "재고 목록을 Excel로 저장했습니다.");
+                var total = exportRows.Sum(s => s.StockValue ?? 0);
+                ExcelCatalog.ExportStockList(exportRows, dlg.FileName, total);
+                SetBanner(pageBanner, filtered
+                    ? $"선택한 {exportRows.Count:N0}개 품목을 Excel로 저장했습니다."
+                    : "재고 목록을 Excel로 저장했습니다.");
             }
         }));
         var shortcutRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
@@ -952,6 +983,14 @@ public sealed class StockView : WorkspaceView
 
 public sealed class StatsView : WorkspaceView
 {
+    private sealed class SupplierPurchaseRow
+    {
+        public required string 월 { get; init; }
+        public required string 거래처 { get; init; }
+        public required string 구매수량 { get; init; }
+        public required string 구매금액 { get; init; }
+    }
+
     public StatsView()
     {
         var pageBanner = CreatePageBanner();
@@ -993,6 +1032,7 @@ public sealed class StatsView : WorkspaceView
         filterHost.Children.Add(supplierFilters);
         IReadOnlyList<ReportRow> current = [];
         var gridHost = new StackPanel();
+        DataGrid? supplierGrid = null;
         var chartHost = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
         var summary = new TextBlock { Margin = new Thickness(0, 0, 0, 8), FontWeight = FontWeights.SemiBold };
         var isSupplierMonthly = false;
@@ -1019,7 +1059,7 @@ public sealed class StatsView : WorkspaceView
                 var supplierDisplay = current
                     .OrderBy(r => r.PeriodLabel, StringComparer.Ordinal)
                     .ThenBy(r => r.Dimension, StringComparer.Ordinal)
-                    .Select(r => new
+                    .Select(r => new SupplierPurchaseRow
                     {
                         월 = r.PeriodLabel,
                         거래처 = r.Dimension,
@@ -1033,15 +1073,18 @@ public sealed class StatsView : WorkspaceView
                 }
                 else
                 {
-                    gridHost.Children.Add(TableGrid(supplierDisplay,
-                        new ColumnSpec("월", "월"),
-                        new ColumnSpec("거래처", "거래처"),
-                        new ColumnSpec("구매수량", "구매수량", ColumnAlign.Right),
-                        new ColumnSpec("구매금액", "구매금액")));
+                    supplierGrid = TableGrid(supplierDisplay, allowMultiSelect: true,
+                        new ColumnSpec("월", nameof(SupplierPurchaseRow.월)),
+                        new ColumnSpec("거래처", nameof(SupplierPurchaseRow.거래처)),
+                        new ColumnSpec("구매수량", nameof(SupplierPurchaseRow.구매수량), ColumnAlign.Right),
+                        new ColumnSpec("구매금액", nameof(SupplierPurchaseRow.구매금액)));
+                    gridHost.Children.Add(supplierGrid);
                 }
 
                 return;
             }
+
+            supplierGrid = null;
 
             var period = kind.SelectedIndex switch
             {
@@ -1168,10 +1211,50 @@ public sealed class StatsView : WorkspaceView
 
             if (isSupplierMonthly)
             {
-                var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "거래처별월별구매내역.xlsx" };
+                var owner = Window.GetWindow(this) ?? Application.Current?.MainWindow;
+                var gridSelectedSuppliers = supplierGrid?.SelectedItems.OfType<SupplierPurchaseRow>()
+                    .Select(r => r.거래처)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList() ?? [];
+                var supplierChoices = current
+                    .Select(r => r.Dimension)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .Select(name => (name, name))
+                    .ToList();
+                var scopeDlg = new ExcelExportScopeDialog(
+                    owner!,
+                    "거래처별 구매 Excel 내보내기",
+                    $"전체 거래처 ({supplierChoices.Count:N0}곳 · {current.Count:N0}건)",
+                    "거래처 선택",
+                    supplierChoices,
+                    gridSelectedSuppliers);
+                if (scopeDlg.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var exportRows = scopeDlg.Scope == ExcelExportScopeDialog.ScopeKind.All
+                    ? current
+                    : current.Where(r => scopeDlg.SelectedKeys.Contains(r.Dimension, StringComparer.Ordinal)).ToList();
+                if (exportRows.Count == 0)
+                {
+                    SetBanner(pageBanner, "내보낼 구매 내역이 없습니다.", isError: true);
+                    return;
+                }
+
+                var filtered = scopeDlg.Scope == ExcelExportScopeDialog.ScopeKind.Selected;
+                var defaultName = ExcelCatalog.BuildExportFileName(
+                    "거래처별월별구매내역",
+                    filtered,
+                    scopeDlg.SelectedKeys.Count);
+                var dlg = new SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = defaultName };
                 if (dlg.ShowDialog() == true)
                 {
-                    ExcelCatalog.ExportSupplierMonthlyPurchases(current, dlg.FileName);
+                    ExcelCatalog.ExportSupplierMonthlyPurchases(exportRows, dlg.FileName);
+                    SetBanner(pageBanner, filtered
+                        ? $"선택한 {scopeDlg.SelectedKeys.Count:N0}개 거래처 구매 내역을 Excel로 저장했습니다."
+                        : "거래처별 월별 구매 내역을 Excel로 저장했습니다.");
                 }
 
                 return;

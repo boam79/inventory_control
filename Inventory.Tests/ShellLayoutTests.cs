@@ -220,6 +220,9 @@ public class ShellLayoutTests
         Assert.Contains("총 재고 금액", forms, StringComparison.Ordinal);
         Assert.Contains("nameof(StockRow.재고금액)", forms, StringComparison.Ordinal);
         Assert.Contains("ExportStockList", forms, StringComparison.Ordinal);
+        Assert.Contains("ExcelExportScopeDialog", forms, StringComparison.Ordinal);
+        Assert.Contains("allowMultiSelect: true", forms, StringComparison.Ordinal);
+        Assert.Contains("품목 선택", forms, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -229,8 +232,10 @@ public class ShellLayoutTests
         Assert.Contains("거래처별 월별 구매내역", forms, StringComparison.Ordinal);
         Assert.Contains("QuerySupplierMonthlyPurchases", forms, StringComparison.Ordinal);
         Assert.Contains("ExportSupplierMonthlyPurchases", forms, StringComparison.Ordinal);
-        Assert.Contains("(\"월\", \"월\")", forms, StringComparison.Ordinal);
-        Assert.Contains("(\"거래처\", \"거래처\")", forms, StringComparison.Ordinal);
+        Assert.Contains("거래처 선택", forms, StringComparison.Ordinal);
+        Assert.Contains("SupplierPurchaseRow", forms, StringComparison.Ordinal);
+        Assert.Contains("nameof(SupplierPurchaseRow.월)", forms, StringComparison.Ordinal);
+        Assert.Contains("nameof(SupplierPurchaseRow.거래처)", forms, StringComparison.Ordinal);
     }
 
     [Fact]

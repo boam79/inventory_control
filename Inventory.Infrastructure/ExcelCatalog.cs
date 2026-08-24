@@ -5,6 +5,9 @@ namespace Inventory.Infrastructure;
 
 public static class ExcelCatalog
 {
+    public static string BuildExportFileName(string baseName, bool filtered, int count)
+        => filtered ? $"{baseName}_선택{count}건.xlsx" : $"{baseName}.xlsx";
+
     public static ImportPreview PreviewMaster(string path)
     {
         using var wb = new XLWorkbook(path);
