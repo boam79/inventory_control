@@ -8,6 +8,8 @@ public sealed class SettingsStore
     public const string PeriodMonth = "PeriodMonth";
     public const string FontScale = "FontScale";
     public const string LastBackupDate = "LastBackupDate";
+    /// <summary>선택: 의원 표시 이름(사용 알림 메일에만 사용).</summary>
+    public const string ClinicName = "ClinicName";
 
     private readonly InventoryDbContext _db;
 

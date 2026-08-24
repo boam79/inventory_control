@@ -181,6 +181,7 @@ public partial class MainWindow : Window
         UpdateLastBackupLabel();
         TryAutoSeedIfEmpty();
         OpenMenu("dashboard");
+        TrySendUsageHeartbeat();
 
         try
         {
@@ -206,6 +207,29 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(_seedNote))
         {
             SetAlert(_seedNote, isWarning: false);
+        }
+    }
+
+    /// <summary>사용(설치) 하트비트 메일 — 하루 1회, 실패해도 업무 차단 없음.</summary>
+    private static void TrySendUsageHeartbeat()
+    {
+        try
+        {
+            var root = UsageNotifyConfigStore.DefaultAppDataRoot();
+            string? clinic = null;
+            using (var db = AppHost.OpenDb())
+            {
+                var fromSettings = new SettingsStore(db).Get(SettingsStore.ClinicName, "");
+                clinic = string.IsNullOrWhiteSpace(fromSettings)
+                    ? ProductInfo.DisplayName
+                    : fromSettings.Trim();
+            }
+
+            UsageHeartbeatService.TrySendTodayInBackground(root, clinic, App.Log);
+        }
+        catch
+        {
+            // 시작 경로에서 절대 막지 않음
         }
     }
 

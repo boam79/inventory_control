@@ -1,0 +1,9 @@
+{
+  "Enabled": true,
+  "ToAddress": "pjm7908@hanmail.net",
+  "SmtpHost": "smtp.daum.net",
+  "SmtpPort": 465,
+  "FromAddress": "pjm7908@hanmail.net",
+  "Password": "여기에_한메일_앱_비밀번호",
+  "PasswordProtected": null
+}

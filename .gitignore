@@ -16,6 +16,9 @@ appsettings.*.local.json
 *.db-wal
 .env
 *.pfx
+usage-notify.json
+**/usage-notify.json
+!config/usage-notify.example.json
 dist/
 artifacts/
 publish/

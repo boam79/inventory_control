@@ -10,6 +10,9 @@ public partial class App : Application
 {
     private ILogger? _log;
 
+    /// <summary>파일 로그(Serilog). 사용 알림 등 백그라운드 작업용.</summary>
+    internal static ILogger? Log { get; private set; }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         var logDir = System.IO.Path.Combine(
@@ -17,6 +20,7 @@ public partial class App : Application
             "SpringClinicInventory",
             "logs");
         _log = AppLog.CreateFileLogger(logDir);
+        Log = _log;
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {

@@ -1209,8 +1209,78 @@ public sealed class SettingsView : WorkspaceView
         });
         panel.Children.Add(updateBtn);
         panel.Children.Add(progressBar);
+
+        var appDataRoot = UsageNotifyConfigStore.DefaultAppDataRoot();
+        var notifyOpts = UsageNotifyConfigStore.LoadOrDefault(appDataRoot);
+        var installId = InstallIdentity.GetOrCreate(appDataRoot);
+        var notifyBody = new StackPanel();
+        notifyBody.Children.Add(Note(
+            "앱 시작 시 하루 1회, 개발자 메일로 설치·사용 알림만 보냅니다. 재고·거래 데이터는 포함하지 않습니다. " +
+            "한메일(다음) SMTP는 앱 비밀번호가 필요합니다. 미설정이면 발송만 건너뛰고 업무는 계속됩니다."));
+        var notifyEnabled = new CheckBox
+        {
+            Content = "사용 알림 보내기",
+            IsChecked = notifyOpts.Enabled,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        notifyBody.Children.Add(notifyEnabled);
+        var installIdBox = Box(installId.ToString("D"));
+        installIdBox.IsReadOnly = true;
+        installIdBox.Width = 320;
+        installIdBox.MaxWidth = 480;
+        notifyBody.Children.Add(Field("설치 ID (읽기 전용)", installIdBox));
+        var smtpFrom = Box(notifyOpts.FromAddress);
+        smtpFrom.Width = 280;
+        smtpFrom.MaxWidth = 400;
+        notifyBody.Children.Add(Field("SMTP 발신(From)", smtpFrom));
+        var smtpHost = Box(string.IsNullOrWhiteSpace(notifyOpts.SmtpHost)
+            ? UsageNotifyOptions.DefaultSmtpHost
+            : notifyOpts.SmtpHost);
+        smtpHost.Width = 220;
+        var smtpPort = Box(notifyOpts.SmtpPort > 0
+            ? notifyOpts.SmtpPort.ToString()
+            : UsageNotifyOptions.DefaultSmtpPort.ToString());
+        smtpPort.Width = 80;
+        notifyBody.Children.Add(Field("SMTP 호스트", smtpHost));
+        notifyBody.Children.Add(Field("SMTP 포트", smtpPort));
+        var smtpPassword = new PasswordBox { Width = 220, MinWidth = 160 };
+        notifyBody.Children.Add(Field(
+            notifyOpts.IsSmtpConfigured() ? "SMTP 앱 비밀번호 (변경 시에만 입력)" : "SMTP 앱 비밀번호",
+            smtpPassword));
+        notifyBody.Children.Add(Note(
+            $"수신: {UsageNotifyOptions.DefaultToAddress} · 설정 파일: {UsageNotifyConfigStore.ConfigPath(appDataRoot)}"));
+        notifyBody.Children.Add(Primary("사용 알림 설정 저장", (_, _) =>
+        {
+            if (!int.TryParse(smtpPort.Text.Trim(), out var port) || port <= 0)
+            {
+                port = UsageNotifyOptions.DefaultSmtpPort;
+            }
+
+            var next = new UsageNotifyOptions
+            {
+                Enabled = notifyEnabled.IsChecked == true,
+                ToAddress = UsageNotifyOptions.DefaultToAddress,
+                SmtpHost = string.IsNullOrWhiteSpace(smtpHost.Text)
+                    ? UsageNotifyOptions.DefaultSmtpHost
+                    : smtpHost.Text.Trim(),
+                SmtpPort = port,
+                FromAddress = smtpFrom.Text.Trim(),
+                PasswordProtected = notifyOpts.PasswordProtected,
+                Password = notifyOpts.Password
+            };
+            var newPassword = smtpPassword.Password;
+            UsageNotifyConfigStore.Save(
+                appDataRoot,
+                next,
+                string.IsNullOrEmpty(newPassword) ? null : newPassword);
+            notifyOpts = UsageNotifyConfigStore.LoadOrDefault(appDataRoot);
+            smtpPassword.Clear();
+            SetBanner(pageBanner, "사용 알림 설정을 저장했습니다.");
+        }));
+
         Content = PageRoot(pageBanner,
             Section("환경설정", panel),
+            Section("사용 알림", notifyBody),
             Section("데이터 초기화", resetBody));
     }
 }
