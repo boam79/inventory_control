@@ -15,6 +15,11 @@ public static class DemoSeedService
     public const int BusyThreshold = 50;
     public const int LotTrackedLimit = 300;
 
+    /// <summary>
+    /// Set after Settings → Empty data reset so startup auto-seed does not refill the DB.
+    /// </summary>
+    public const string SuppressAutoSeedKey = "SuppressAutoSeed";
+
     private static readonly (string Prefix, string Category, string Spec, decimal Price, decimal MonthlyBase, bool PreferLot)[] Templates =
     [
         ("주사기 1ml", "주사", "1ml", 80m, 4m, true),
@@ -38,8 +43,37 @@ public static class DemoSeedService
             || d.Type == DocumentType.Issue
             || d.Type == DocumentType.Adjustment);
 
+    public static bool IsAutoSeedSuppressed(InventoryDbContext db) =>
+        db.AppMeta.Any(row => row.Key == SuppressAutoSeedKey && row.Value == "1");
+
+    public static void SetAutoSeedSuppressed(InventoryDbContext db, bool suppressed)
+    {
+        var row = db.AppMeta.SingleOrDefault(m => m.Key == SuppressAutoSeedKey);
+        if (suppressed)
+        {
+            if (row is null)
+            {
+                db.AppMeta.Add(new AppMeta { Key = SuppressAutoSeedKey, Value = "1" });
+            }
+            else
+            {
+                row.Value = "1";
+            }
+        }
+        else if (row is not null)
+        {
+            row.Value = "0";
+        }
+
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// True only for a brand-new empty DB that the user has not intentionally cleared.
+    /// After Settings → Empty reset, <see cref="SuppressAutoSeedKey"/> blocks re-seed on reboot.
+    /// </summary>
     public static bool ShouldAutoSeed(InventoryDbContext db) =>
-        CountBusinessDocuments(db) == 0;
+        !IsAutoSeedSuppressed(db) && CountBusinessDocuments(db) == 0;
 
     public static decimal SeasonalFactor(string category, int month)
     {
@@ -70,6 +104,15 @@ public static class DemoSeedService
         if (!ShouldAutoSeed(db))
         {
             var existing = CountBusinessDocuments(db);
+            if (IsAutoSeedSuppressed(db) && existing == 0)
+            {
+                return new DemoSeedResult(
+                    false,
+                    0,
+                    db.Items.Count(),
+                    "데이터 초기화 후에는 자동으로 테스트 데이터를 넣지 않습니다. 필요하면 설정에서 샘플 데이터를 만드세요.");
+            }
+
             return new DemoSeedResult(
                 false,
                 existing,

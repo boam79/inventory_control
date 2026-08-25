@@ -44,9 +44,45 @@ public sealed class DataResetTests : IDisposable
 
         using var after = InventoryDatabase.CreateContext(_dbPath);
         Assert.True(DataResetService.IsInventoryEmpty(after));
+        Assert.True(DemoSeedService.IsAutoSeedSuppressed(after));
+        Assert.False(DemoSeedService.ShouldAutoSeed(after));
         Assert.Equal("large", new SettingsStore(after).Get(SettingsStore.FontScale));
         Assert.True(after.Users.Any(u => u.UserName == "admin" || u.UserName == "nurse"));
         Assert.Contains(after.AuditLogs, log => log.Action == "DataReset.Empty");
+    }
+
+    [Fact]
+    public void Empty_reset_survives_reopen_and_blocks_auto_seed()
+    {
+        using (var db = InventoryDatabase.CreateContext(_dbPath))
+        {
+            Assert.True(DemoSeedService.ShouldAutoSeed(db));
+            var svc = new InventoryService(db, "admin");
+            svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+            svc.SaveOpeningDraft("M001", "OPEN", 5, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1));
+            svc.ConfirmOpening("M001");
+            svc.Receive(
+                new DateTime(2026, 2, 1),
+                null,
+                "R1",
+                [new ReceiptLineRequest { ItemCode = "M001", Quantity = 3, UnitPrice = 80, LotNumber = "L1", ExpiryDate = new DateTime(2027, 6, 1) }]);
+        }
+
+        using (var db = InventoryDatabase.CreateContext(_dbPath))
+        {
+            var result = DataResetService.Reset(db, DataResetMode.Empty, new DateTime(2026, 8, 20), "admin");
+            Assert.True(result.Applied, result.Message);
+        }
+
+        // Simulate reboot: new connection, same DB file — must stay empty and not auto-seed.
+        using var reopened = InventoryDatabase.CreateContext(_dbPath);
+        Assert.True(DataResetService.IsInventoryEmpty(reopened));
+        Assert.False(DemoSeedService.ShouldAutoSeed(reopened));
+        var auto = DemoSeedService.TryAutoSeed(reopened, new DateTime(2026, 8, 20), "admin", itemCount: 40);
+        Assert.False(auto.Applied);
+        Assert.True(DataResetService.IsInventoryEmpty(reopened));
+        Assert.Equal(0, reopened.Items.Count());
+        Assert.Equal(0, DemoSeedService.CountBusinessDocuments(reopened));
     }
 
     [Fact]

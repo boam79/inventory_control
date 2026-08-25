@@ -33,6 +33,19 @@ public sealed class DemoSeedTests : IDisposable
     }
 
     [Fact]
+    public void Auto_seed_skipped_when_suppress_flag_set_even_if_empty()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        Assert.True(DemoSeedService.ShouldAutoSeed(db));
+        DemoSeedService.SetAutoSeedSuppressed(db, suppressed: true);
+        Assert.False(DemoSeedService.ShouldAutoSeed(db));
+        var result = DemoSeedService.TryAutoSeed(db, new DateTime(2026, 8, 20), "admin", 40);
+        Assert.False(result.Applied);
+        Assert.Equal(0, db.Items.Count());
+        Assert.Contains("초기화", result.Message);
+    }
+
+    [Fact]
     public void Auto_seed_skips_when_a_real_receipt_exists()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);

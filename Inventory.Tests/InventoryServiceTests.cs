@@ -215,13 +215,15 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Equal(1m, svc.GetOnHand("M001"));
         Assert.Equal(0m, svc.LotsForItem("M001").Single(l => l.LotNumber == "L4").Quantity);
 
-        var summary = svc.ListDocumentSummaries(10).Single(d => d.Id == receipt.Id);
+        var summary = svc.ListDocumentSummaries(10, includeCancelled: true).Single(d => d.Id == receipt.Id);
         Assert.Equal("주사기", summary.FirstItemName);
         Assert.True(summary.IsCancelled);
         Assert.Equal(4m, summary.TotalQuantity);
         Assert.Equal(40m, summary.TotalAmount);
         Assert.Equal(10m, summary.UnitPrice);
         Assert.Equal(MoneyFormulas.LineAmount(summary.TotalQuantity, summary.UnitPrice!.Value), summary.TotalAmount);
+
+        Assert.DoesNotContain(svc.ListDocumentSummaries(10), d => d.Id == receipt.Id);
     }
 
     [Fact]
@@ -254,6 +256,31 @@ public sealed class InventoryServiceTests : IDisposable
         svc.DeleteDocument(receipt.Id);
         Assert.True(db.Documents.Single(d => d.Id == receipt.Id).IsCancelled);
         Assert.Equal(10m, svc.GetOnHand("M001"));
+        Assert.DoesNotContain(svc.ListDocumentSummaries(10), d => d.Id == receipt.Id);
+        Assert.DoesNotContain(svc.ListDocumentSummaries(10, voucherTypesOnly: true), d => d.Id == receipt.Id);
+    }
+
+    [Fact]
+    public void ListDocumentSummaries_excludes_cancelled_by_default()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 10, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(30));
+        svc.ConfirmOpening("M001");
+        var keep = svc.Receive(DateTime.Today, null, "KEEP",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 1, UnitPrice = 50, LotNumber = "K1", ExpiryDate = DateTime.Today.AddDays(20) }]);
+        var gone = svc.Receive(DateTime.Today, null, "GONE",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 1, UnitPrice = 50, LotNumber = "G1", ExpiryDate = DateTime.Today.AddDays(20) }]);
+        svc.DeleteDocument(gone.Id);
+
+        var visible = svc.ListDocumentSummaries(20, voucherTypesOnly: true);
+        Assert.Contains(visible, d => d.Id == keep.Id);
+        Assert.DoesNotContain(visible, d => d.Id == gone.Id);
+        Assert.All(visible, d => Assert.False(d.IsCancelled));
+
+        var withCancelled = svc.ListDocumentSummaries(20, voucherTypesOnly: true, includeCancelled: true);
+        Assert.Contains(withCancelled, d => d.Id == gone.Id && d.IsCancelled);
     }
 
     [Fact]
@@ -428,10 +455,10 @@ public sealed class InventoryServiceTests : IDisposable
         var issue = svc.Issue(DateTime.Today, null, [new IssueLineRequest { ItemCode = "M001", Quantity = 2, LotNumber = "OPEN" }]);
         svc.CancelDocument(receipt.Id, "테스트 취소");
 
-        Assert.Contains(svc.ListDocumentSummaries(20), d => d.Type == DocumentType.Reversal);
+        Assert.Contains(svc.ListDocumentSummaries(20, includeCancelled: true), d => d.Type == DocumentType.Reversal);
         var vouchers = svc.ListDocumentSummaries(20, voucherTypesOnly: true);
         Assert.DoesNotContain(vouchers, d => d.Type == DocumentType.Reversal);
-        Assert.Contains(vouchers, d => d.Id == receipt.Id);
+        Assert.DoesNotContain(vouchers, d => d.Id == receipt.Id); // cancelled → hidden from recent list
         Assert.Contains(vouchers, d => d.Id == issue.Id);
 
         var issuesOnly = svc.ListDocumentSummaries(20, DocumentType.Issue);
@@ -439,7 +466,7 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Contains(issuesOnly, d => d.Id == issue.Id);
         Assert.DoesNotContain(issuesOnly, d => d.Id == receipt.Id);
 
-        var receiptsOnly = svc.ListDocumentSummaries(20, DocumentType.Receipt);
+        var receiptsOnly = svc.ListDocumentSummaries(20, DocumentType.Receipt, includeCancelled: true);
         Assert.All(receiptsOnly, d => Assert.Equal(DocumentType.Receipt, d.Type));
         Assert.Contains(receiptsOnly, d => d.Id == receipt.Id);
     }

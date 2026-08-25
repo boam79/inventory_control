@@ -53,6 +53,8 @@ public static class DataResetService
         }
 
         ClearInventoryData(db);
+        // Prevent MainWindow.TryAutoSeedIfEmpty from re-filling demo data after reboot.
+        DemoSeedService.SetAutoSeedSuppressed(db, suppressed: true);
         new AuditService(db).Write(
             actor,
             "DataReset.Empty",
@@ -81,6 +83,8 @@ public static class DataResetService
         db.Database.ExecuteSqlRaw("DELETE FROM Departments");
         db.Database.ExecuteSqlRaw("DELETE FROM Suppliers");
         db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = ON");
+        // Flush WAL so Empty reset is durable before process exit / reboot.
+        db.Database.ExecuteSqlRaw("PRAGMA wal_checkpoint(TRUNCATE)");
         db.SaveChanges();
         db.ChangeTracker.Clear();
     }

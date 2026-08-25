@@ -557,10 +557,15 @@ public sealed class InventoryService
     /// When null and <paramref name="voucherTypesOnly"/> is true, Receipt + Issue only
     /// (excludes Reversal / Adjustment / Opening which used to appear as fake 「출고」).
     /// </param>
+    /// <param name="includeCancelled">
+    /// When false (default), cancelled/deleted slips are omitted so 「최근 전표」목록에서 사라진다.
+    /// Soft-cancel + stock reversal still runs; pass true only when audit/history needs them.
+    /// </param>
     public IReadOnlyList<DocumentSummary> ListDocumentSummaries(
         int take,
         DocumentType? type = null,
-        bool voucherTypesOnly = false)
+        bool voucherTypesOnly = false,
+        bool includeCancelled = false)
     {
         var query = _db.Documents.AsNoTracking().AsQueryable();
         if (type is { } typed)
@@ -570,6 +575,11 @@ public sealed class InventoryService
         else if (voucherTypesOnly)
         {
             query = query.Where(d => d.Type == DocumentType.Receipt || d.Type == DocumentType.Issue);
+        }
+
+        if (!includeCancelled)
+        {
+            query = query.Where(d => !d.IsCancelled);
         }
 
         var summaries = query
