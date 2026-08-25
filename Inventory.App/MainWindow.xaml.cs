@@ -209,9 +209,53 @@ public partial class MainWindow : Window
             App.Log?.Warning(ex, "시작 업데이트 확인 예외(업무 계속): {Message}", AppLog.Sanitize(ex.Message));
         }
 
+        // 강제 업데이트 이후: 킬스위치·최소 버전 (설정 UI 없음, 오프라인 fail-open)
+        await RunStartupPolicyGateAsync();
+
         if (!string.IsNullOrWhiteSpace(_seedNote))
         {
             SetAlert(_seedNote, isWarning: false);
+        }
+    }
+
+    /// <summary>
+    /// GitHub raw 정책. kill/minVersion 위반 시 OK만 있는 차단 대화상자 후 종료.
+    /// fetch 실패 시 업무 허용(로그).
+    /// </summary>
+    private async Task RunStartupPolicyGateAsync()
+    {
+        try
+        {
+            var check = await KillSwitchPolicyChecker.CheckAsync(ProductInfo.Version);
+            if (check.Result == PolicyGateResult.FetchFailed)
+            {
+                App.Log?.Warning(
+                    "원격 정책 확인 실패(업무 계속, fail-open): {Message}",
+                    AppLog.Sanitize(check.ErrorMessage ?? "unknown"));
+                return;
+            }
+
+            if (check.Result is not (PolicyGateResult.Kill or PolicyGateResult.BelowMinVersion))
+            {
+                return;
+            }
+
+            var message = KillSwitchPolicyChecker.BlockMessage(check.Result, check.Policy);
+            App.Log?.Warning(
+                "원격 정책으로 앱 종료: {Result} min={Min} current={Current}",
+                check.Result,
+                check.Policy?.MinVersion ?? "",
+                ProductInfo.Version);
+            MessageBox.Show(
+                message,
+                ProductInfo.DisplayName,
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Application.Current?.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            App.Log?.Warning(ex, "원격 정책 확인 예외(업무 계속): {Message}", AppLog.Sanitize(ex.Message));
         }
     }
 
