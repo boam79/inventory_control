@@ -56,7 +56,6 @@ public enum UsageHeartbeatOutcome
 {
     Sent,
     SkippedDisabled,
-    SkippedAlreadySentToday,
     SkippedSmtpNotConfigured,
     Failed
 }
@@ -64,14 +63,11 @@ public enum UsageHeartbeatOutcome
 public sealed record UsageHeartbeatResult(UsageHeartbeatOutcome Outcome, string Message);
 
 /// <summary>
-/// 설치/사용 하트비트 메일. 하루 1회, 실패해도 업무를 막지 않습니다. 재고 데이터는 보내지 않습니다.
+/// 설치/사용 하트비트 메일. 앱 시작마다, 실패해도 업무를 막지 않습니다. 재고 데이터는 보내지 않습니다.
 /// </summary>
 public static class UsageHeartbeatService
 {
     private static int _smtpMissingLogged;
-
-    public static bool ShouldSendToday(DateOnly? lastSentLocalDate, DateOnly todayLocal) =>
-        lastSentLocalDate is null || lastSentLocalDate.Value != todayLocal;
 
     public static UsageHeartbeatResult TrySendToday(
         string appDataRoot,
@@ -88,9 +84,6 @@ public static class UsageHeartbeatService
             {
                 return new UsageHeartbeatResult(UsageHeartbeatOutcome.SkippedDisabled, "사용 알림이 꺼져 있습니다.");
             }
-
-            var today = todayLocal ?? DateOnly.FromDateTime(DateTime.Now);
-            _ = today;
 
             if (!options.IsSmtpConfigured())
             {

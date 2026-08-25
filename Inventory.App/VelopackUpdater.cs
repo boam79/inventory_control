@@ -9,7 +9,10 @@ namespace Inventory.App;
 
 internal sealed record UpdatePromptInfo(string VersionTag, string Message);
 
-internal sealed record UpdateStartupResult(string StatusMessage, UpdatePromptInfo? Prompt);
+internal sealed record UpdateStartupResult(
+    StartupUpdatePolicy Policy,
+    string StatusMessage,
+    UpdatePromptInfo? ForcePrompt);
 
 internal static class VelopackUpdater
 {
@@ -23,30 +26,63 @@ internal static class VelopackUpdater
     public static Task<string> CheckAndDownloadAsync() =>
         ApplyFromButtonAsync(progress: null, applyAndRestart: true);
 
+    /// <summary>Velopack 설치본 여부. 개발 실행·미설치면 false (예외를 밖으로 던지지 않음).</summary>
+    public static bool TryIsVelopackInstalled()
+    {
+        try
+        {
+            var source = new SimpleWebSource(LatestFeedBaseUrl);
+            var mgr = new UpdateManager(source);
+            return mgr.IsInstalled;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static async Task<UpdateStartupResult> CheckStartupAsync()
     {
         try
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
             var offer = await UpdateChecker.InspectLatestAsync(client);
+            var checkSucceeded = offer.Found;
+            var remoteNewer = checkSucceeded && UpdateChecker.IsRemoteNewer(offer.VersionTag, ProductInfo.Version);
+            var installed = TryIsVelopackInstalled();
+            var policy = UpdateChecker.DecideStartupUpdate(checkSucceeded, remoteNewer, installed);
             var status = UpdateChecker.StatusMessage(offer, ProductInfo.Version);
-            UpdatePromptInfo? prompt = UpdateChecker.ShouldShowUpdatePrompt(offer, ProductInfo.Version)
-                ? new UpdatePromptInfo(
-                    offer.VersionTag,
-                    UpdateChecker.UpdatePromptMessage(offer, ProductInfo.Version))
-                : null;
-            return new UpdateStartupResult(status, prompt);
+
+            if (policy == StartupUpdatePolicy.ForceUpdate)
+            {
+                return new UpdateStartupResult(
+                    policy,
+                    status,
+                    new UpdatePromptInfo(offer.VersionTag, UpdateChecker.ForceUpdateMessage(offer, ProductInfo.Version)));
+            }
+
+            if (policy == StartupUpdatePolicy.ContinueOfflineOrFailed)
+            {
+                // Found=false: InspectLatest already put a Korean offline/failure message in offer.Message
+                return new UpdateStartupResult(policy, status, null);
+            }
+
+            if (policy == StartupUpdatePolicy.ContinueNotInstalled && remoteNewer)
+            {
+                return new UpdateStartupResult(
+                    policy,
+                    status + "\n(개발/비설치 실행이라 강제 업데이트를 건너뜁니다.)",
+                    null);
+            }
+
+            return new UpdateStartupResult(policy, status, null);
         }
         catch (Exception ex)
         {
-            if (UpdateChecker.LooksLikeRateLimit(ex.Message))
-            {
-                return new UpdateStartupResult(UpdateChecker.RateLimitUserMessage, null);
-            }
-
-            return new UpdateStartupResult(
-                $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {UpdateChecker.ReleasesUrl}",
-                null);
+            var message = UpdateChecker.LooksLikeRateLimit(ex.Message)
+                ? UpdateChecker.RateLimitUserMessage
+                : $"원인: {AppLog.Sanitize(ex.Message)}\n조치: 입고·출고는 계속하세요. {UpdateChecker.ReleasesUrl}";
+            return new UpdateStartupResult(StartupUpdatePolicy.ContinueOfflineOrFailed, message, null);
         }
     }
 

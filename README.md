@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts/pack-installer.ps1
 DB는 설치 폴더가 아니라 `%LOCALAPPDATA%\SpringClinicInventory\inventory.db` 입니다.
 
 업데이트 피드: https://github.com/boam79/inventory_control/releases  
-설치본에서 상단 **업데이트** 또는 환경설정의 **업데이트**를 누르면 GitHub Releases의 새 패키지를 받아 SHA256(있으면)을 검사한 뒤 적용하고 앱을 다시 시작합니다. `dotnet run`은 설치본이 아니라 자동 적용하지 않습니다. 실패해도 재고 업무는 계속됩니다.
+설치본은 **시작 시** 새 버전이 있으면 취소 없이 자동 적용·재시작합니다(오프라인·확인 실패 시에는 업무 계속). 상단 **업데이트** 버튼으로 수동 확인도 가능합니다. `dotnet run`은 설치본이 아니라 강제 업데이트를 하지 않습니다.
 
 `gh`로 릴리스에 올리려면 (로그인 후):
 

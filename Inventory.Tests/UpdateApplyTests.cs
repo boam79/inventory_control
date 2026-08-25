@@ -107,6 +107,41 @@ public class UpdateApplyTests
     }
 
     [Fact]
+    public void Startup_force_when_update_available_and_velopack_installed()
+    {
+        Assert.Equal(
+            StartupUpdatePolicy.ForceUpdate,
+            UpdateChecker.DecideStartupUpdate(checkSucceeded: true, remoteNewer: true, isVelopackInstalled: true));
+    }
+
+    [Fact]
+    public void Startup_allows_offline_when_check_fails()
+    {
+        Assert.Equal(
+            StartupUpdatePolicy.ContinueOfflineOrFailed,
+            UpdateChecker.DecideStartupUpdate(checkSucceeded: false, remoteNewer: true, isVelopackInstalled: true));
+        Assert.Equal(
+            StartupUpdatePolicy.ContinueOfflineOrFailed,
+            UpdateChecker.DecideStartupUpdate(checkSucceeded: false, remoteNewer: false, isVelopackInstalled: false));
+    }
+
+    [Fact]
+    public void Startup_skips_force_when_not_velopack_installed()
+    {
+        Assert.Equal(
+            StartupUpdatePolicy.ContinueNotInstalled,
+            UpdateChecker.DecideStartupUpdate(checkSucceeded: true, remoteNewer: true, isVelopackInstalled: false));
+    }
+
+    [Fact]
+    public void Startup_continues_when_already_latest()
+    {
+        Assert.Equal(
+            StartupUpdatePolicy.ContinueLatest,
+            UpdateChecker.DecideStartupUpdate(checkSucceeded: true, remoteNewer: false, isVelopackInstalled: true));
+    }
+
+    [Fact]
     public void Update_prompt_message_is_korean_with_version_guidance()
     {
         var offer = new LatestReleaseOffer(
@@ -122,6 +157,25 @@ public class UpdateApplyTests
         Assert.Contains("1.0.28", message);
         Assert.Contains("다시 시작", message);
         Assert.Contains("업데이트", message);
+    }
+
+    [Fact]
+    public void Force_update_message_is_korean_and_non_cancellable()
+    {
+        var offer = new LatestReleaseOffer(
+            true,
+            "v1.0.47",
+            "https://example.invalid/Setup.exe",
+            null,
+            null,
+            false,
+            "최신 v1.0.47");
+        var message = UpdateChecker.ForceUpdateMessage(offer, "1.0.46");
+        Assert.Contains("v1.0.47", message);
+        Assert.Contains("1.0.46", message);
+        Assert.Contains("필수", message);
+        Assert.Contains("취소할 수 없습니다", message);
+        Assert.DoesNotContain("나중에", message);
     }
 
     [Fact]

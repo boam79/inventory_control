@@ -1157,7 +1157,7 @@ public sealed class SettingsView : WorkspaceView
             resetBody.Children.Add(Note("데이터 초기화는 관리자만 실행할 수 있습니다."));
         }
 
-        panel.Children.Add(Note("업데이트는 상단의 「업데이트」 또는 아래 버튼입니다. 설치본에서만 자동 적용됩니다. 개발 실행(dotnet run)에서는 Setup.exe를 받아 설치하세요."));
+        panel.Children.Add(Note("업데이트는 시작 시 새 버전이 있으면 자동 적용됩니다. 상단 「업데이트」로 수동 확인도 가능합니다. 설치본에서만 적용됩니다. 개발 실행(dotnet run)에서는 Setup.exe를 받아 설치하세요."));
         var progressBar = new ProgressBar
         {
             Height = 16,

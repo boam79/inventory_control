@@ -186,12 +186,17 @@ public partial class MainWindow : Window
         try
         {
             var startup = await VelopackUpdater.CheckStartupAsync();
-            if (startup.Prompt is not null)
+            if (startup.Policy == StartupUpdatePolicy.ForceUpdate && startup.ForcePrompt is not null)
             {
-                await TryShowStartupUpdatePromptAsync(startup.Prompt);
+                await RunForcedStartupUpdateAsync(startup.ForcePrompt);
             }
             else
             {
+                if (startup.Policy == StartupUpdatePolicy.ContinueOfflineOrFailed)
+                {
+                    App.Log?.Warning("시작 업데이트 확인 실패(업무 계속): {Message}", AppLog.Sanitize(startup.StatusMessage));
+                }
+
                 var first = startup.StatusMessage.Split('\n')[0];
                 var warn = first.Contains("실패", StringComparison.Ordinal)
                            || first.Contains("못", StringComparison.Ordinal)
@@ -199,9 +204,9 @@ public partial class MainWindow : Window
                 SetAlert(first, warn);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // startup check failure: no popup; header alert unchanged
+            App.Log?.Warning(ex, "시작 업데이트 확인 예외(업무 계속): {Message}", AppLog.Sanitize(ex.Message));
         }
 
         if (!string.IsNullOrWhiteSpace(_seedNote))
@@ -210,7 +215,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>사용(설치) 하트비트 메일 — 하루 1회, 실패해도 업무 차단 없음.</summary>
+    /// <summary>사용(설치) 하트비트 메일 — 앱 시작마다, 실패해도 업무 차단 없음.</summary>
     private static void TrySendUsageHeartbeat()
     {
         try
@@ -315,18 +320,44 @@ public partial class MainWindow : Window
 
     public void ShowDashboard() => OpenMenu("dashboard", force: true);
 
-    private async Task TryShowStartupUpdatePromptAsync(UpdatePromptInfo? prompt)
+    private async Task RunForcedStartupUpdateAsync(UpdatePromptInfo prompt)
     {
-        if (prompt is null || _startupUpdatePromptShown)
+        if (_startupUpdatePromptShown)
         {
             return;
         }
 
         _startupUpdatePromptShown = true;
-        var dialog = new UpdatePromptDialog(this, prompt.Message);
-        if (dialog.ShowDialog() == true && dialog.ApplyNow)
+        IsEnabled = false;
+        var dialog = new ForceUpdateProgressDialog(this, prompt.Message);
+        dialog.Show();
+        try
         {
-            await ApplyUpdateAsync();
+            var progress = new Progress<string>(text =>
+            {
+                dialog.Dispatcher.Invoke(() => dialog.SetProgress(text));
+                var first = (text ?? "").Split('\n')[0];
+                SetAlert(string.IsNullOrWhiteSpace(first) ? "업데이트 중..." : first, isWarning: false);
+            });
+            var result = await VelopackUpdater.ApplyFromButtonAsync(progress, applyAndRestart: true);
+            // ApplyUpdatesAndRestart normally exits; if we return, apply failed — allow clinic work.
+            dialog.AllowClose();
+            dialog.Close();
+            App.Log?.Warning("강제 업데이트 적용 실패(업무 계속): {Message}", AppLog.Sanitize(result));
+            var warn = result.Contains("원인", StringComparison.Ordinal)
+                       || result.Contains("설치본이 아닙니다", StringComparison.Ordinal);
+            SetAlert(result.Split('\n')[0], warn);
+        }
+        catch (Exception ex)
+        {
+            dialog.AllowClose();
+            dialog.Close();
+            App.Log?.Warning(ex, "강제 업데이트 예외(업무 계속): {Message}", AppLog.Sanitize(ex.Message));
+            SetAlert($"원인: {AppLog.Sanitize(ex.Message)} 입고·출고는 계속하세요.", isWarning: true);
+        }
+        finally
+        {
+            IsEnabled = true;
         }
     }
 

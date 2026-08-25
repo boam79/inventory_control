@@ -22,6 +22,19 @@ public sealed record PackageApplyResult(
     string Message,
     string? StagedPath);
 
+/// <summary>앱 시작 시 강제 업데이트 여부 결정.</summary>
+public enum StartupUpdatePolicy
+{
+    /// <summary>이미 최신 — 정상 진행</summary>
+    ContinueLatest,
+    /// <summary>새 버전 + Velopack 설치본 — 취소 불가 강제 적용</summary>
+    ForceUpdate,
+    /// <summary>오프라인·피드 확인 실패 — 로그 후 업무 허용</summary>
+    ContinueOfflineOrFailed,
+    /// <summary>새 버전 있으나 설치본 아님(개발 실행 등) — 강제 스킵</summary>
+    ContinueNotInstalled
+}
+
 public static class UpdateChecker
 {
     public const string ReleasesUrl = "https://github.com/boam79/inventory_control/releases";
@@ -119,11 +132,45 @@ public static class UpdateChecker
     public static bool ShouldShowUpdatePrompt(LatestReleaseOffer offer, string currentVersion) =>
         offer.Found && IsRemoteNewer(offer.VersionTag, currentVersion);
 
+    /// <summary>
+    /// 시작 시 강제 업데이트 정책.
+    /// 오프라인/확인 실패 → 업무 허용. Velopack 미설치 → 강제 스킵. 새 버전+설치본 → 강제 적용.
+    /// </summary>
+    public static StartupUpdatePolicy DecideStartupUpdate(
+        bool checkSucceeded,
+        bool remoteNewer,
+        bool isVelopackInstalled)
+    {
+        if (!checkSucceeded)
+        {
+            return StartupUpdatePolicy.ContinueOfflineOrFailed;
+        }
+
+        if (!remoteNewer)
+        {
+            return StartupUpdatePolicy.ContinueLatest;
+        }
+
+        if (!isVelopackInstalled)
+        {
+            return StartupUpdatePolicy.ContinueNotInstalled;
+        }
+
+        return StartupUpdatePolicy.ForceUpdate;
+    }
+
     public static string UpdatePromptMessage(LatestReleaseOffer offer, string currentVersion) =>
         $"새 버전 {offer.VersionTag}이(가) 배포되었습니다.\n\n"
         + $"현재 버전: {currentVersion}\n\n"
         + "지금 업데이트하면 프로그램이 다시 시작됩니다.\n"
         + "나중에 하려면 상단 「업데이트」 버튼을 이용하세요.";
+
+    /// <summary>시작 시 완전 강제 업데이트용 안내 (취소 불가).</summary>
+    public static string ForceUpdateMessage(LatestReleaseOffer offer, string currentVersion) =>
+        $"새 버전 {offer.VersionTag}이(가) 배포되었습니다.\n\n"
+        + $"현재 버전: {currentVersion}\n\n"
+        + "필수 업데이트를 적용합니다. 완료되면 프로그램이 다시 시작됩니다.\n"
+        + "취소할 수 없습니다.";
 
     public static string AfterVelopackNoUpdate(LatestReleaseOffer? offer, string currentVersion)
     {
