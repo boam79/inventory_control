@@ -238,7 +238,7 @@ public sealed class ReceiveIssueView : WorkspaceView
             UpdateLineTotal();
         }
 
-        void SwitchMode(VoucherMode next, bool resetForm = true, bool syncRecentFilter = true)
+        void SwitchMode(VoucherMode next, bool resetForm = true)
         {
             var changed = currentMode != next;
             if (changed)
@@ -259,19 +259,6 @@ public sealed class ReceiveIssueView : WorkspaceView
             }
 
             ApplyModeUi();
-            if (syncRecentFilter)
-            {
-                var nextFilter = next == VoucherMode.Receive ? "receive" : "issue";
-                if (docFilter != nextFilter)
-                {
-                    docFilter = nextFilter;
-                    ReloadRecent();
-                }
-                else if (changed)
-                {
-                    RenderRecentGrid();
-                }
-            }
         }
 
         void ReloadRecent()
@@ -313,19 +300,6 @@ public sealed class ReceiveIssueView : WorkspaceView
                 }
 
                 docFilter = id;
-                if (id == "receive" && canReceive)
-                {
-                    SwitchMode(VoucherMode.Receive, resetForm: false, syncRecentFilter: false);
-                }
-                else if (id == "issue" && canIssue)
-                {
-                    SwitchMode(VoucherMode.Issue, resetForm: false, syncRecentFilter: false);
-                }
-                else
-                {
-                    ApplyModeUi();
-                }
-
                 ReloadRecent();
             }, ("all", "전체"), ("receive", "입고"), ("issue", "출고")));
 

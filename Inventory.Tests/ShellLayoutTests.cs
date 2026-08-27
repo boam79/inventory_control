@@ -196,6 +196,9 @@ public class ShellLayoutTests
         Assert.Contains("ColumnSpec(\"유형\", \"유형\"", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("(\"all\", \"전체\"), (\"receive\", \"입고\"), (\"issue\", \"출고\")", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("ListDocumentSummaries(80, typeFilter, voucherTypesOnly: true)", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("var docFilter = \"all\";", receiveIssue, StringComparison.Ordinal);
+        Assert.DoesNotContain("syncRecentFilter", receiveIssue, StringComparison.Ordinal);
+        Assert.DoesNotContain("var nextFilter = next == VoucherMode.Receive ? \"receive\" : \"issue\"", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("saveButton.Content = isReceive ? \"입고 저장\" : \"출고 저장\"", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("Primary(currentMode == VoucherMode.Receive ? \"입고 저장\" : \"출고 저장\"", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("RadioButton", receiveIssue, StringComparison.Ordinal);
