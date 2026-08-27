@@ -339,7 +339,7 @@ public sealed class ReceiveIssueView : WorkspaceView
             {
                 if (next.SelectedItem is RecentDocRow row)
                 {
-                    BeginEdit(row);
+                    FillNewVoucherFromRecent(row);
                 }
             };
             recentGrid = next;
@@ -353,27 +353,71 @@ public sealed class ReceiveIssueView : WorkspaceView
         List<RecentDocRow> SelectedRecentRows()
             => recentGrid?.SelectedItems.OfType<RecentDocRow>().ToList() ?? [];
 
-        void BeginEdit(RecentDocRow? fromDoubleClick = null)
+        void FillNewVoucherFromRecent(RecentDocRow row)
         {
-            RecentDocRow? target = fromDoubleClick;
-            if (target is null)
+            if (row.IsCancelled)
             {
-                var selected = SelectedRecentRows();
-                if (selected.Count == 0)
-                {
-                    SetBanner(pageBanner, "목록에서 전표를 고르세요.", isError: true);
-                    return;
-                }
-
-                if (selected.Count > 1)
-                {
-                    SetBanner(pageBanner, "수정은 한 건만 선택할 수 있습니다.", isError: true);
-                    return;
-                }
-
-                target = selected[0];
+                SetBanner(pageBanner, "이미 삭제된 전표입니다.", isError: true);
+                return;
             }
 
+            try
+            {
+                using var db = AppHost.OpenDb();
+                var detail = new InventoryService(db, AppHost.Actor).GetDocumentDetail(row.전표);
+                if (detail.Lines.Count == 0)
+                {
+                    SetBanner(pageBanner, "전표에 품목이 없습니다.", isError: true);
+                    return;
+                }
+
+                if (editingId is not null)
+                {
+                    ResetEditState();
+                }
+
+                var first = detail.Lines[0];
+                selectedCode = first.ItemCode;
+                newVoucherExpander.IsExpanded = true;
+                if (currentMode == VoucherMode.Receive)
+                {
+                    receiveItemSearch.SetSelection(first.ItemCode, first.ItemName);
+                    price.Text = first.UnitPrice.ToString(CultureInfo.CurrentCulture);
+                }
+                else
+                {
+                    issueItemSearch.SetSelection(first.ItemCode, first.ItemName);
+                    if (!string.IsNullOrWhiteSpace(first.LotNumber))
+                    {
+                        lot.Text = first.LotNumber;
+                    }
+                }
+
+                UpdateLineTotal();
+                SetBanner(pageBanner, $"'{first.ItemName}' 품목을 넣었습니다. 수량 확인 후 「품목 추가」를 누르세요.");
+            }
+            catch (Exception ex)
+            {
+                SetBanner(pageBanner, $"원인: {AppLog.Sanitize(ex.Message)}", isError: true);
+            }
+        }
+
+        void BeginEdit()
+        {
+            var selected = SelectedRecentRows();
+            if (selected.Count == 0)
+            {
+                SetBanner(pageBanner, "목록에서 전표를 고르세요.", isError: true);
+                return;
+            }
+
+            if (selected.Count > 1)
+            {
+                SetBanner(pageBanner, "수정은 한 건만 선택할 수 있습니다.", isError: true);
+                return;
+            }
+
+            var target = selected[0];
             selectedDoc = target;
             if (target.IsCancelled)
             {

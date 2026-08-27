@@ -274,7 +274,7 @@ public class ShellLayoutTests
     }
 
     [Fact]
-    public void Receive_issue_recent_list_double_click_starts_edit()
+    public void Receive_issue_recent_list_double_click_fills_item_without_changing_mode()
     {
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         var viewStart = forms.IndexOf("public sealed class ReceiveIssueView", StringComparison.Ordinal);
@@ -282,7 +282,11 @@ public class ShellLayoutTests
         Assert.True(viewStart >= 0 && stockStart > viewStart);
         var view = forms[viewStart..stockStart];
         Assert.Contains("MouseDoubleClick", view, StringComparison.Ordinal);
-        Assert.Contains("BeginEdit", view, StringComparison.Ordinal);
+        Assert.Contains("FillNewVoucherFromRecent", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("BeginEdit(row)", view, StringComparison.Ordinal);
+        Assert.Contains("Primary(\"수정\"", view, StringComparison.Ordinal);
+        Assert.Contains("SwitchMode(requiredMode, resetForm: false)", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("입고 전표입니다. 새 전표를 입고로 선택한 뒤 수정하세요.", view, StringComparison.Ordinal);
         Assert.Contains("Field(\"LOT\", lot)", view, StringComparison.Ordinal);
     }
 
