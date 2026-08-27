@@ -371,6 +371,22 @@ public class ShellLayoutTests
     }
 
     [Fact]
+    public void Stock_view_can_hide_items_from_list()
+    {
+        var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
+        var stockStart = forms.IndexOf("public sealed class StockView", StringComparison.Ordinal);
+        var statsStart = forms.IndexOf("public sealed class StatsView", StringComparison.Ordinal);
+        Assert.True(stockStart >= 0 && statsStart > stockStart);
+        var stock = forms[stockStart..statsStart];
+        Assert.Contains("Danger(\"삭제\"", stock, StringComparison.Ordinal);
+        Assert.Contains("DeleteSelectedItems()", stock, StringComparison.Ordinal);
+        Assert.Contains("HideItemFromStock", stock, StringComparison.Ordinal);
+        Assert.Contains("perms.CanReceive", stock, StringComparison.Ordinal);
+        Assert.Contains("재고가 남아 있으면 삭제되지 않습니다.", stock, StringComparison.Ordinal);
+        Assert.Contains("allowMultiSelect: true", stock, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void App_starts_on_main_window_without_login_or_logout()
     {
         var appXaml = ReadRepoFile("Inventory.App", "App.xaml");

@@ -471,6 +471,98 @@ public sealed class InventoryServiceTests : IDisposable
         Assert.Contains(receiptsOnly, d => d.Id == receipt.Id);
     }
 
+    [Fact]
+    public void Delete_last_receive_hides_item_from_stock_when_no_other_live_docs()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var item = svc.FindOrCreateItemByName("임시품목");
+        var receipt = svc.Receive(DateTime.Today, null, null,
+            [new ReceiptLineRequest { ItemCode = item.Code, Quantity = 3, UnitPrice = 10 }]);
+        Assert.Contains(svc.SearchStockSnapshots(""), s => s.Code == item.Code);
+
+        svc.DeleteDocument(receipt.Id);
+
+        Assert.True(db.Documents.Single(d => d.Id == receipt.Id).IsCancelled);
+        Assert.DoesNotContain(svc.SearchStockSnapshots(""), s => s.Code == item.Code);
+        Assert.False(db.Items.Single(i => i.Id == item.Id).IsActive);
+    }
+
+    [Fact]
+    public void Delete_one_receive_keeps_item_when_other_stock_remains()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var item = svc.FindOrCreateItemByName("유지품목");
+        var keep = svc.Receive(DateTime.Today, null, "KEEP",
+            [new ReceiptLineRequest { ItemCode = item.Code, Quantity = 4, UnitPrice = 10 }]);
+        var gone = svc.Receive(DateTime.Today, null, "GONE",
+            [new ReceiptLineRequest { ItemCode = item.Code, Quantity = 2, UnitPrice = 10 }]);
+        svc.DeleteDocument(gone.Id);
+
+        Assert.Contains(svc.SearchStockSnapshots(""), s => s.Code == item.Code);
+        Assert.Equal(4m, svc.GetOnHand(item.Code));
+        Assert.True(db.Items.Single(i => i.Id == item.Id).IsActive);
+        Assert.Contains(svc.ListDocumentSummaries(10), d => d.Id == keep.Id);
+    }
+
+    [Fact]
+    public void Issued_out_item_stays_in_stock_until_manually_hidden()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var item = svc.FindOrCreateItemByName("품절품목");
+        svc.Receive(DateTime.Today, null, null,
+            [new ReceiptLineRequest { ItemCode = item.Code, Quantity = 5, UnitPrice = 1 }]);
+        svc.Issue(DateTime.Today, null, [new IssueLineRequest { ItemCode = item.Code, Quantity = 5 }]);
+        Assert.Equal(0m, svc.GetOnHand(item.Code));
+        Assert.Contains(svc.SearchStockSnapshots(""), s => s.Code == item.Code);
+
+        svc.HideItemFromStock(item.Code);
+        Assert.DoesNotContain(svc.SearchStockSnapshots(""), s => s.Code == item.Code);
+    }
+
+    [Fact]
+    public void HideItemFromStock_rejects_when_on_hand_remains()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 8, DateTime.Today.AddDays(-1), DateTime.Today.AddDays(30));
+        svc.ConfirmOpening("M001");
+        var ex = Assert.Throws<InvalidOperationException>(() => svc.HideItemFromStock("M001"));
+        Assert.Contains("재고가 남아", ex.Message);
+        Assert.Contains(svc.SearchStockSnapshots(""), s => s.Code == "M001");
+    }
+
+    [Fact]
+    public void HideItemFromStock_removes_unused_catalog_item_from_snapshots()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        var item = svc.FindOrCreateItemByName("미저장품목");
+        Assert.Contains(svc.SearchStockSnapshots(""), s => s.Code == item.Code);
+        svc.HideItemFromStock(item.Code);
+        Assert.DoesNotContain(svc.SearchStockSnapshots(""), s => s.Code == item.Code);
+        Assert.False(db.Items.Single(i => i.Id == item.Id).IsActive);
+    }
+
+    [Fact]
+    public void Opening_stock_keeps_item_after_receive_is_deleted()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 1, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(30));
+        svc.ConfirmOpening("M001");
+        var receipt = svc.Receive(DateTime.Today, null, "C1",
+            [new ReceiptLineRequest { ItemCode = "M001", Quantity = 4, UnitPrice = 10, LotNumber = "L4", ExpiryDate = DateTime.Today.AddDays(20) }]);
+        svc.DeleteDocument(receipt.Id);
+        Assert.Contains(svc.SearchStockSnapshots("M001"), s => s.Code == "M001");
+        Assert.Equal(1m, svc.GetOnHand("M001"));
+        Assert.True(db.Items.Single(i => i.Code == "M001").IsActive);
+    }
+
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

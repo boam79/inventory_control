@@ -129,6 +129,27 @@ public sealed class InventoryService
         _db.SaveChanges();
     }
 
+    /// <summary>
+    /// 재고 목록에서 품목을 숨긴다(사용중지). 전표 이력은 남긴다.
+    /// 현재고가 남아 있으면 거부한다.
+    /// </summary>
+    public void HideItemFromStock(string code)
+    {
+        var item = RequireItem(code);
+        if (!item.IsActive)
+        {
+            return;
+        }
+
+        if ((GetOnHand(code) ?? 0m) > 0m)
+        {
+            throw new InvalidOperationException("재고가 남아 있는 품목은 삭제할 수 없습니다. 입출고 전표를 먼저 삭제하세요.");
+        }
+
+        item.IsActive = false;
+        _db.SaveChanges();
+    }
+
     public IReadOnlyList<Item> ItemsAvailableForIssue() =>
         _db.Items.Where(i => i.IsActive && i.OpeningStatus == OpeningStatus.Confirmed).ToList();
 
@@ -436,6 +457,9 @@ public sealed class InventoryService
             ReversesDocumentId = original.Id
         };
         _db.Documents.Add(reversal);
+        var itemIds = original.Lines.Select(l => l.ItemId).Distinct().ToList();
+        _db.SaveChanges();
+        HideUnusedItemsFromStock(itemIds);
         _db.SaveChanges();
         return reversal;
     }
@@ -495,7 +519,7 @@ public sealed class InventoryService
         var today = DateTime.Today;
         var warnUntil = today.AddDays(expiryWarningDays);
         query ??= string.Empty;
-        var itemQuery = _db.Items.AsNoTracking().AsQueryable();
+        var itemQuery = _db.Items.AsNoTracking().Where(i => i.IsActive);
         if (!string.IsNullOrWhiteSpace(query))
         {
             itemQuery = itemQuery.Where(i =>
@@ -796,6 +820,38 @@ public sealed class InventoryService
         if (_db.MonthCloses.Any(c => c.Year == date.Year && c.Month == date.Month && c.IsClosed))
         {
             throw new InvalidOperationException("마감된 기간의 거래는 저장할 수 없습니다.");
+        }
+    }
+
+    /// <summary>
+    /// 전표 취소 후 현재고 0이고 다른 유효 전표가 없는 품목을 재고 목록에서 숨긴다.
+    /// </summary>
+    private void HideUnusedItemsFromStock(IReadOnlyCollection<int> itemIds)
+    {
+        foreach (var itemId in itemIds)
+        {
+            var item = _db.Items.SingleOrDefault(i => i.Id == itemId);
+            if (item is null || !item.IsActive)
+            {
+                continue;
+            }
+
+            var onHand = _db.Lots.Where(l => l.ItemId == itemId).Sum(l => (decimal?)l.Quantity) ?? 0m;
+            if (onHand > 0m)
+            {
+                continue;
+            }
+
+            var hasLive = _db.StockLines.Any(l =>
+                l.ItemId == itemId
+                && !l.Document.IsCancelled
+                && l.Document.Type != DocumentType.Reversal);
+            if (hasLive)
+            {
+                continue;
+            }
+
+            item.IsActive = false;
         }
     }
 

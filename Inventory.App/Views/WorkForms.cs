@@ -861,6 +861,7 @@ public sealed class StockView : WorkspaceView
         DataGrid? grid = null;
         var chipsHost = new StackPanel();
         StockRow? selectedStock = null;
+        var selectedForDelete = new List<StockRow>();
         var perms = AppSession.Current?.Permissions ?? RolePermissions.For(UserRole.Viewer);
 
         void ShowLots(string code)
@@ -924,11 +925,15 @@ public sealed class StockView : WorkspaceView
             };
             next.SelectionChanged += (_, _) =>
             {
-                if (next.SelectedItem is StockRow row)
+                var rows = next.SelectedItems.OfType<StockRow>().ToList();
+                if (rows.Count == 0)
                 {
-                    selectedStock = row;
-                    ShowLots(row.코드);
+                    return;
                 }
+
+                selectedForDelete = rows;
+                selectedStock = rows[0];
+                ShowLots(rows[0].코드);
             };
             gridHost.Children.Clear();
             if (slice.Count == 0)
@@ -989,7 +994,68 @@ public sealed class StockView : WorkspaceView
             lotHost.Children.Clear();
             lotExpander.IsExpanded = false;
             selectedStock = null;
+            selectedForDelete.Clear();
             Render();
+        }
+
+        void DeleteSelectedItems()
+        {
+            var selected = selectedForDelete.Count > 0
+                ? selectedForDelete
+                : grid?.SelectedItems.OfType<StockRow>().ToList() ?? [];
+            if (selected.Count == 0)
+            {
+                SetBanner(pageBanner, "재고 목록에서 품목을 고르세요.", isError: true);
+                return;
+            }
+
+            var confirm = selected.Count == 1
+                ? $"품목 '{selected[0].품목}'을 재고 목록에서 삭제할까요? 재고가 남아 있으면 삭제되지 않습니다."
+                : $"선택한 {selected.Count}개 품목을 재고 목록에서 삭제할까요? 재고가 남아 있으면 삭제되지 않습니다.";
+            if (MessageBox.Show(
+                    confirm,
+                    ProductInfo.DisplayName,
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                var codes = selected.Select(r => r.코드).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                SetBanner(pageBanner, AppHost.Run((_, s) =>
+                {
+                    var hidden = 0;
+                    string? firstBlock = null;
+                    foreach (var code in codes)
+                    {
+                        try
+                        {
+                            s.HideItemFromStock(code);
+                            hidden++;
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            firstBlock ??= ex.Message;
+                        }
+                    }
+
+                    if (hidden == 0)
+                    {
+                        throw new InvalidOperationException(firstBlock ?? "재고가 남아 있는 품목은 삭제할 수 없습니다. 입출고 전표를 먼저 삭제하세요.");
+                    }
+
+                    return firstBlock is null
+                        ? (hidden == 1 ? "품목을 재고 목록에서 삭제했습니다." : $"{hidden}개 품목을 재고 목록에서 삭제했습니다.")
+                        : $"{hidden}개 삭제. 일부는 재고가 남아 삭제하지 못했습니다.";
+                }));
+                Reload();
+            }
+            catch (Exception ex)
+            {
+                SetBanner(pageBanner, $"원인: {AppLog.Sanitize(ex.Message)}", isError: true);
+            }
         }
 
         itemSearch.SelectionChanged += _ => Reload();
@@ -1013,6 +1079,11 @@ public sealed class StockView : WorkspaceView
         listBody.Children.Add(gridHost);
         listBody.Children.Add(Pager(count, pageText, () => { page--; Render(); }, () => { page++; Render(); }));
         var actionRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        if (perms.CanReceive)
+        {
+            actionRow.Children.Add(Danger("삭제", (_, _) => DeleteSelectedItems()));
+        }
+
         actionRow.Children.Add(Btn("Excel 내보내기", (_, _) =>
         {
             if (filteredSnaps.Count == 0)
