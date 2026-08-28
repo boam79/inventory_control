@@ -322,7 +322,8 @@ public sealed class InventoryService
     public StockDocument Issue(
         DateTime date,
         int? departmentId,
-        IReadOnlyList<IssueLineRequest> lines)
+        IReadOnlyList<IssueLineRequest> lines,
+        string? issuedTo = null)
     {
         EnsurePeriodOpen(date);
         var doc = new StockDocument
@@ -330,7 +331,8 @@ public sealed class InventoryService
             Type = DocumentType.Issue,
             DocumentDate = date,
             DepartmentId = departmentId,
-            UserName = _actor
+            UserName = _actor,
+            IssuedTo = string.IsNullOrWhiteSpace(issuedTo) ? null : issuedTo.Trim()
         };
 
         foreach (var line in lines)
@@ -685,7 +687,8 @@ public sealed class InventoryService
             doc.IsCancelled,
             supplierName,
             departmentName,
-            lines);
+            lines,
+            doc.IssuedTo);
     }
 
     /// <summary>전표 삭제(재고 반대 처리). 원본은 취소 표시로 남긴다.</summary>

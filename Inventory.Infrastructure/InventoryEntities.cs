@@ -85,6 +85,8 @@ public sealed class StockDocument
     public int? DepartmentId { get; set; }
     public string? DocumentNo { get; set; }
     public string UserName { get; set; } = string.Empty;
+    /// <summary>출고를 받는 사람(사용부서와 별도). 앱 로그인 계정 UserName과 구분한다.</summary>
+    public string? IssuedTo { get; set; }
     public bool IsCancelled { get; set; }
     public int? ReversesDocumentId { get; set; }
     public string? Reason { get; set; }
@@ -197,7 +199,8 @@ public sealed record DocumentDetail(
     bool IsCancelled,
     string? SupplierName,
     string? DepartmentName,
-    IReadOnlyList<DocumentLineDetail> Lines);
+    IReadOnlyList<DocumentLineDetail> Lines,
+    string? IssuedTo = null);
 
 public sealed class ImportPreview
 {

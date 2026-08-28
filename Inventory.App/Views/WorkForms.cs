@@ -75,6 +75,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         var dateIssue = Date();
         var supplier = Box();
         var dept = Box();
+        var issuedTo = Box();
         var qty = Box("1");
         var price = Box("0");
         var lineTotal = new TextBlock { Text = "0원", MinWidth = 160, Width = 180, VerticalAlignment = VerticalAlignment.Center };
@@ -127,6 +128,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         var priceField = Field("단가", price);
         var lineTotalField = Field("총금액", lineTotal);
         var deptField = Field("사용부서", dept);
+        var issuedToField = Field("사용자", issuedTo);
         var lotField = Field("LOT", lot);
         var dateFieldReceive = Field("입고일", dateReceive);
         var dateFieldIssue = Field("출고일", dateIssue);
@@ -210,6 +212,7 @@ public sealed class ReceiveIssueView : WorkspaceView
             price.IsReadOnly = !isReceive;
             price.Background = isReceive ? Brushes.White : new SolidColorBrush(Color.FromRgb(245, 245, 245));
             deptField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
+            issuedToField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             lotField.Visibility = isReceive ? Visibility.Collapsed : Visibility.Visible;
             newVoucherExpander.Header = isReceive ? "+ 새 입고" : "+ 새 출고";
             if (saveButton is not null)
@@ -447,6 +450,7 @@ public sealed class ReceiveIssueView : WorkspaceView
                 ActiveDatePicker().SelectedDate = detail.DocumentDate;
                 supplier.Text = detail.SupplierName ?? "";
                 dept.Text = detail.DepartmentName ?? "";
+                issuedTo.Text = detail.IssuedTo ?? "";
                 cart.Clear();
                 foreach (var line in detail.Lines)
                 {
@@ -723,7 +727,8 @@ public sealed class ReceiveIssueView : WorkspaceView
                             ItemCode = l.코드,
                             Quantity = l.수량,
                             LotNumber = l.LOT
-                        }).ToList());
+                        }).ToList(),
+                        issuedTo.Text);
                     cart.Clear();
                     RenderCart();
                     var wasIssueEdit = editingId.HasValue;
@@ -784,6 +789,7 @@ public sealed class ReceiveIssueView : WorkspaceView
 
         supplier.TextChanged += (_, _) => ClearEditBannerOnChange();
         dept.TextChanged += (_, _) => ClearEditBannerOnChange();
+        issuedTo.TextChanged += (_, _) => ClearEditBannerOnChange();
         qty.TextChanged += (_, _) =>
         {
             ClearEditBannerOnChange();
@@ -798,7 +804,7 @@ public sealed class ReceiveIssueView : WorkspaceView
         dateReceive.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
         dateIssue.SelectedDateChanged += (_, _) => ClearEditBannerOnChange();
 
-        var form = FormRow(itemFieldReceive, itemFieldIssue, dateFieldReceive, dateFieldIssue, supplierField, deptField, qtyField, priceField, lineTotalField, lotField);
+        var form = FormRow(itemFieldReceive, itemFieldIssue, dateFieldReceive, dateFieldIssue, supplierField, deptField, issuedToField, qtyField, priceField, lineTotalField, lotField);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
         actions.Children.Add(add);
         actions.Children.Add(saveButton);

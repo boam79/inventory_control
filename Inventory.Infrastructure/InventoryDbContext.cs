@@ -102,6 +102,7 @@ public sealed class InventoryDbContext : DbContext
             entity.HasMany(row => row.Lines).WithOne(row => row.Document).HasForeignKey(row => row.DocumentId);
             entity.Property(row => row.Type).HasConversion<string>().HasMaxLength(24);
             entity.Property(row => row.AdjustmentType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(row => row.IssuedTo).HasMaxLength(64);
         });
 
         modelBuilder.Entity<StockLine>(entity =>

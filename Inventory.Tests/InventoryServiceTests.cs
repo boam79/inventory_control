@@ -261,6 +261,26 @@ public sealed class InventoryServiceTests : IDisposable
     }
 
     [Fact]
+    public void Issue_stores_issued_to_user_on_document()
+    {
+        using var db = InventoryDatabase.CreateContext(_dbPath);
+        var svc = new InventoryService(db, "admin");
+        svc.CreateItem("M001", "주사기", "소모품", "개", "개", 10);
+        svc.SaveOpeningDraft("M001", "OPEN", 10, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(30));
+        svc.ConfirmOpening("M001");
+        var dept = svc.CreateDepartment("외래");
+        var issue = svc.Issue(
+            DateTime.Today,
+            dept.Id,
+            [new IssueLineRequest { ItemCode = "M001", Quantity = 1, LotNumber = "OPEN" }],
+            issuedTo: "김간호");
+        Assert.Equal("김간호", db.Documents.Single(d => d.Id == issue.Id).IssuedTo);
+        var detail = svc.GetDocumentDetail(issue.Id);
+        Assert.Equal("김간호", detail.IssuedTo);
+        Assert.Equal("외래", detail.DepartmentName);
+    }
+
+    [Fact]
     public void ListDocumentSummaries_excludes_cancelled_by_default()
     {
         using var db = InventoryDatabase.CreateContext(_dbPath);
