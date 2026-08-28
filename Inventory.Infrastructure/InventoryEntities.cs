@@ -183,7 +183,9 @@ public sealed record DocumentSummary(
     string? FirstItemName = null,
     decimal TotalQuantity = 0,
     decimal TotalAmount = 0,
-    decimal? UnitPrice = null);
+    decimal? UnitPrice = null,
+    string? SupplierName = null,
+    string? IssuedTo = null);
 
 public sealed record DocumentLineDetail(
     string ItemCode,

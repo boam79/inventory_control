@@ -622,7 +622,9 @@ public sealed class InventoryService
                 TotalQuantity = d.Lines.Sum(l => l.Quantity),
                 TotalAmount = d.Lines.Sum(l => l.Amount),
                 FirstItemId = d.Lines.OrderBy(l => l.Id).Select(l => (int?)l.ItemId).FirstOrDefault(),
-                FirstUnitPrice = d.Lines.OrderBy(l => l.Id).Select(l => (decimal?)l.UnitPrice).FirstOrDefault()
+                FirstUnitPrice = d.Lines.OrderBy(l => l.Id).Select(l => (decimal?)l.UnitPrice).FirstOrDefault(),
+                d.SupplierId,
+                d.IssuedTo
             })
             .ToList();
 
@@ -630,6 +632,10 @@ public sealed class InventoryService
         var names = _db.Items.AsNoTracking()
             .Where(i => itemIds.Contains(i.Id))
             .ToDictionary(i => i.Id, i => i.Name);
+        var supplierIds = summaries.Where(s => s.SupplierId.HasValue).Select(s => s.SupplierId!.Value).Distinct().ToList();
+        var suppliers = _db.Suppliers.AsNoTracking()
+            .Where(s => supplierIds.Contains(s.Id))
+            .ToDictionary(s => s.Id, s => s.Name);
 
         return summaries.Select(s => new DocumentSummary(
                 s.Id,
@@ -641,7 +647,9 @@ public sealed class InventoryService
                 s.FirstItemId.HasValue && names.TryGetValue(s.FirstItemId.Value, out var name) ? name : null,
                 s.TotalQuantity,
                 s.TotalAmount,
-                s.LineCount == 1 ? s.FirstUnitPrice : null))
+                s.LineCount == 1 ? s.FirstUnitPrice : null,
+                s.SupplierId.HasValue && suppliers.TryGetValue(s.SupplierId.Value, out var supplierName) ? supplierName : null,
+                s.IssuedTo))
             .ToList();
     }
 

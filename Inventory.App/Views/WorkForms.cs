@@ -39,6 +39,8 @@ public sealed class ReceiveIssueView : WorkspaceView
         public required string 일자 { get; init; }
         public required int 전표 { get; init; }
         public required string 품목 { get; init; }
+        public required string 공급업체 { get; init; }
+        public required string 사용자 { get; init; }
         public required string 수량 { get; init; }
         public required string 단가 { get; init; }
         public required string 총금액 { get; init; }
@@ -280,6 +282,8 @@ public sealed class ReceiveIssueView : WorkspaceView
                 일자 = d.DocumentDate.ToString("yyyy-MM-dd"),
                 전표 = d.Id,
                 품목 = d.LineCount > 1 ? $"{d.FirstItemName} 등 {d.LineCount}건" : d.FirstItemName ?? "—",
+                공급업체 = string.IsNullOrWhiteSpace(d.SupplierName) ? "—" : d.SupplierName,
+                사용자 = string.IsNullOrWhiteSpace(d.IssuedTo) ? "—" : d.IssuedTo,
                 수량 = d.LineCount > 1 ? $"{d.LineCount}품목" : MoneyFormulas.FormatQty(d.TotalQuantity),
                 단가 = d.UnitPrice is { } p ? MoneyFormulas.FormatWon(p) : "—",
                 총금액 = MoneyFormulas.FormatWon(d.TotalAmount),
@@ -328,15 +332,28 @@ public sealed class ReceiveIssueView : WorkspaceView
                 return;
             }
 
-            var next = TableGrid(filtered, allowMultiSelect: true,
+            var columns = new List<ColumnSpec>
+            {
                 new ColumnSpec("유형", "유형", Width: 56),
                 new ColumnSpec("일자", "일자"),
                 new ColumnSpec("전표", "전표"),
-                new ColumnSpec("품목", "품목"),
-                new ColumnSpec("수량", "수량", ColumnAlign.Right),
-                new ColumnSpec("단가", "단가", ColumnAlign.Right),
-                new ColumnSpec("총금액", "총금액", ColumnAlign.Right),
-                new ColumnSpec("상태", "상태", Width: 72));
+                new ColumnSpec("품목", "품목")
+            };
+            if (docFilter != "issue")
+            {
+                columns.Add(new ColumnSpec("공급업체", "공급업체"));
+            }
+
+            if (docFilter != "receive")
+            {
+                columns.Add(new ColumnSpec("사용자", "사용자"));
+            }
+
+            columns.Add(new ColumnSpec("수량", "수량", ColumnAlign.Right));
+            columns.Add(new ColumnSpec("단가", "단가", ColumnAlign.Right));
+            columns.Add(new ColumnSpec("총금액", "총금액", ColumnAlign.Right));
+            columns.Add(new ColumnSpec("상태", "상태", Width: 72));
+            var next = TableGrid(filtered, allowMultiSelect: true, columns.ToArray());
             next.SelectionChanged += (_, _) => selectedDoc = next.SelectedItem as RecentDocRow;
             next.MouseDoubleClick += (_, _) =>
             {

@@ -194,6 +194,8 @@ public class ShellLayoutTests
         Assert.Contains("allowMultiSelect: true", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("SelectedRecentRows()", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("ColumnSpec(\"유형\", \"유형\"", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("docFilter != \"issue\"", receiveIssue, StringComparison.Ordinal);
+        Assert.Contains("docFilter != \"receive\"", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("(\"all\", \"전체\"), (\"receive\", \"입고\"), (\"issue\", \"출고\")", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("Field(\"사용부서\", dept)", receiveIssue, StringComparison.Ordinal);
         Assert.Contains("Field(\"사용자\", issuedTo)", receiveIssue, StringComparison.Ordinal);
@@ -252,6 +254,10 @@ public class ShellLayoutTests
         var forms = ReadRepoFile("Inventory.App", "Views", "WorkForms.cs");
         Assert.Contains("유형 = DocTypeKo(d.Type)", forms, StringComparison.Ordinal);
         Assert.Contains("품목 = d.LineCount > 1 ? $\"{d.FirstItemName} 등 {d.LineCount}건\" : d.FirstItemName ?? \"—\"", forms, StringComparison.Ordinal);
+        Assert.Contains("공급업체 = string.IsNullOrWhiteSpace(d.SupplierName) ? \"—\" : d.SupplierName", forms, StringComparison.Ordinal);
+        Assert.Contains("사용자 = string.IsNullOrWhiteSpace(d.IssuedTo) ? \"—\" : d.IssuedTo", forms, StringComparison.Ordinal);
+        Assert.Contains("ColumnSpec(\"공급업체\", \"공급업체\")", forms, StringComparison.Ordinal);
+        Assert.Contains("ColumnSpec(\"사용자\", \"사용자\")", forms, StringComparison.Ordinal);
         Assert.Contains("(\"품목\", \"품목\")", forms, StringComparison.Ordinal);
         Assert.Contains("IsExpired = days is not null && days < 0", forms, StringComparison.Ordinal);
         Assert.Contains("class LotRow", forms, StringComparison.Ordinal);
